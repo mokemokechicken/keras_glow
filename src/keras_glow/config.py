@@ -17,6 +17,8 @@ class Config(ConfigBase):
     def __init__(self):
         self.runtime = RuntimeConfig()
         self.resource = ResourceConfig()
+        self.data = DataConfig()
+        self.training = TrainingConfig()
 
 
 class RuntimeConfig(ConfigBase):
@@ -27,6 +29,10 @@ class RuntimeConfig(ConfigBase):
 class ResourceConfig(ConfigBase):
     def __init__(self):
         self.system_dir = _system_dir()
+
+        # data
+        self.data_dir = self.system_dir / 'data'
+        self.image_dir = self.data_dir / 'image'
 
         # Log
         self.log_dir = self.system_dir / "log"
@@ -39,3 +45,13 @@ class ResourceConfig(ConfigBase):
         for d in dirs:
             os.makedirs(d, exist_ok=True)
 
+
+class DataConfig(ConfigBase):
+    def __init__(self):
+        self.image_width = 16
+        self.image_height = 16
+
+
+class TrainingConfig(ConfigBase):
+    def __init__(self):
+        self.batch_size = 4

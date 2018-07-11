@@ -1,7 +1,7 @@
 from logging import getLogger
 
 from keras_glow.config import Config
-from keras_glow.data.training.processor import Processor
+from keras_glow.data.data_process import DataProcess
 from keras_glow.glow.model import GlowModel
 
 logger = getLogger(__name__)
@@ -17,10 +17,9 @@ class TrainingCommand:
         self.config = config
 
     def start(self):
-        dp = Processor(self.config)
-        dataset = dp.create_dataset()
+        dp = DataProcess(self.config)
+        # for y in dp.iterator():
+        #     print(y.shape)
 
         model = GlowModel(self.config)
         model.build()
-
-

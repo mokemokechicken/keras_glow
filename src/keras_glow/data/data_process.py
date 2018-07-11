@@ -1,5 +1,4 @@
 from copy import copy
-from glob import glob
 
 import numpy as np
 from PIL import Image
@@ -22,16 +21,22 @@ class DataProcess:
         self.index_in_epoch = 0
         self.y_images = []
 
-    def provide_next_data(self, size=None):
-        bs = size or self.config.batch_size
-        while len(self.y_images) < bs:
+    def provide_next_data(self, batch_size=None):
+        batch_size = batch_size or self.config.training.batch_size
+        while len(self.y_images) < batch_size:
             self.load_into_images()
-        y = np.concatenate(self.y_images[:bs], axis=0)  # (bs, ph, pw, 3)
-        self.y_images = self.y_images[bs:]
+        y = np.concatenate(self.y_images[:batch_size], axis=0)  # (bs, ph, pw, 3)
+        self.y_images = self.y_images[batch_size:]
         return y
 
+    def iterator(self, batch_size=None):
+        self.shuffle_and_init_training_data()
+        batch_size = batch_size or self.config.training.batch_size
+        for _ in range(self.image_count // batch_size):
+            yield self.provide_next_data(batch_size=batch_size)
+
     def open_image(self, image_file):
-        im_size = (self.config.image_width, self.config.image_height)
+        im_size = (self.config.data.image_width, self.config.data.image_height)
         image = Image.open(image_file)  # type: Image.Image
         if image.size != im_size:
             image = image.resize(im_size, resample=BILINEAR)
@@ -66,7 +71,7 @@ class DataProcess:
     @property
     def image_files(self):
         if not self._image_files:
-            self._image_files = list(glob("%s/**/*.jpg" % self.config.image_dir))
+            self._image_files = list(self.config.resource.image_dir.glob("**/*.jpg"))
         return self._image_files
 
     @property
