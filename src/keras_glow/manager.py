@@ -1,5 +1,6 @@
 import argparse
 from logging import getLogger
+import importlib
 
 from moke_config import create_config
 
@@ -15,10 +16,10 @@ def create_parser():
     parser.add_argument("--config", help="specify config file")
     parser.add_argument("--log-level", help="specify Log Level(debug/info/warning/error): default=info",
                         choices=['debug', 'info', 'warning', 'error'])
-    parser.set_defaults(handler=aaa_handler)
-    # sub = parser.add_subparsers()
-    # parser_fit = sub.add_parser("aaa")
-    # parser_fit.set_defaults(handler=fit.start)
+    sub = parser.add_subparsers()
+
+    parser_training = sub.add_parser("training")
+    parser_training.set_defaults(command='training')
     return parser
 
 
@@ -39,14 +40,11 @@ def start():
     setup(config, args)
     logger.info(args)
 
-    if hasattr(args, "handler"):
-        args.handler(config)
+    if hasattr(args, "command"):
+        m = importlib.import_module(f'keras_glow.command.{args.command}')
+        m.start(config)
     else:
         parser.print_help()
         raise RuntimeError(f"unknown command")
 
     logger.info(f"Finish: {args}")
-
-
-def aaa_handler(config: Config):
-    pass
