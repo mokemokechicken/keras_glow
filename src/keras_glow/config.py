@@ -18,6 +18,7 @@ class Config(ConfigBase):
         self.runtime = RuntimeConfig()
         self.resource = ResourceConfig()
         self.data = DataConfig()
+        self.model = ModelConfig()
         self.training = TrainingConfig()
 
 
@@ -50,6 +51,13 @@ class DataConfig(ConfigBase):
     def __init__(self):
         self.image_width = 16
         self.image_height = 16
+
+
+class ModelConfig(ConfigBase):
+    def __init__(self):
+        self.n_bins = 256
+        self.n_levels = 2  # 4
+        self.n_depth = 4   # 32
 
 
 class TrainingConfig(ConfigBase):

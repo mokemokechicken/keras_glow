@@ -66,7 +66,7 @@ class DataProcess:
         :rtype: np.ndarray
         :return: 
         """
-        return np.array(image, dtype="uint8") / 255.
+        return np.array(image, dtype="uint8")
 
     @property
     def image_files(self):
