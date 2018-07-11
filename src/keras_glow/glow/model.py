@@ -6,7 +6,7 @@ from tensorflow.python.keras.layers import Lambda, Dense
 from tensorflow.python.keras import backend as K
 
 from keras_glow.config import Config
-
+import numpy as np
 
 logger = getLogger(__name__)
 
@@ -89,12 +89,18 @@ class ActNorm(Layer):
 
 
 class Invertible1x1Conv(Layer):
+    rotate_matrix = None
+
     def compute_output_shape(self, input_shape):
         return input_shape
 
     def build(self, input_shape):
         # TODO: impl
-        pass
+        w_shape = [input_shape[3], input_shape[3]]  # [n_channel, n_channel]
+        # Sample a random orthogonal matrix:
+        w_init = np.linalg.qr(np.random.randn(*w_shape))[0].astype('float32')
+
+        self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=w_init)
 
     def call(self, inputs, **kwargs):
         # TODO: impl
