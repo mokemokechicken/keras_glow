@@ -8,6 +8,9 @@ tensorflow = "*"
 moke-config = "*"
 python-dotenv = "*"
 pyyaml = "*"
+pillow = "*"
+"beautifulsoup4" = "*"
+requests = "*"
 
 [dev-packages]
 
