@@ -18,42 +18,75 @@ class GlowModel:
     def __init__(self, config: Config):
         self.config = config
         self._layers = {}
-        self.encoder = None
+        self.encoder = None  # type: Model
         self.bit_per_sub_pixel_factor = None  # type: float
 
     def build(self):
+        self.encoder = self.build_encoder()
+
+    def build_encoder(self):
         mc = self.config.model
         dc = self.config.data
         logger.info(mc)
         in_shape = (dc.image_height, dc.image_width, 3)
-        in_x = Input(shape=in_shape, name='image')
-        # to bits per sub pixel
+        in_x = Input(shape=in_shape, name='image', dtype='uint8')
+
+        # for loss to bits per sub pixel
         self.bit_per_sub_pixel_factor = 1. / np.log(2.) * np.prod(in_shape)
 
-        # preprocess
+        # pre-process
         out = Lambda(lambda x: x / mc.n_bins - 0.5)(in_x)
         # add noise
         out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins))(out)
         # first squeeze
         out = Squeeze2d()(out)
 
-        # encoder
-        encoder_out = self.build_encoder(out)
-        self.encoder = Model(inputs=in_x, outputs=encoder_out)
+        # encoder_loop
+        encoder_loop_out = self.build_encoder_loop(out)
+        encoder = Model(inputs=in_x, outputs=encoder_loop_out)
 
         # add prior loss
-        prior = GaussianDiag.prior(K.shape(encoder_out))
-        self.encoder.add_loss(-prior.logp(encoder_out) * self.bit_per_sub_pixel_factor)
+        prior = GaussianDiag.prior(K.shape(encoder_loop_out))
+        encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)
 
         # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
-        self.encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
+        encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
+        return encoder
 
-    def build_encoder(self, out):
+    def build_encoder_loop(self, out):
         mc = self.config.model
         for level_idx in range(mc.n_levels):
             out = self.revnet2d(out, level_idx)
             if level_idx < mc.n_levels - 1:
                 out = self.split2d(out, level_idx)
+        return out
+
+    def build_decoder(self, z_shape=None):
+        z_shape = z_shape or K.int_shape(self.encoder.output)
+
+        mc = self.config.model
+        z_in = Input(shape=z_shape, name="z_in")
+        temperature = Input(shape=(1, ), name="temperature")
+
+        # build_decoder_loop
+        out = z_in
+        for level_idx in reversed(range(mc.n_levels)):
+            if level_idx < mc.n_levels - 1:
+                out = self.split2d_reverse(out, temperature, level_idx)
+            out = self.revnet2d(out, level_idx, reverse=True)
+
+        out = Unsqueeze2d()(out)
+        # post-process
+        out = Lambda(lambda x: K.cast(K.clip(tf.floor((x + 0.5) * mc.n_bins), 0, 255), 'uint8'))(out)
+        decoder = Model(inputs=[z_in, temperature], outputs=[out])
+        return decoder
+
+    def split2d_reverse(self, out, temperature, level_idx):
+        layer_key = f'li-{level_idx}'
+        split_2d = self.get_layer(Split2d, layer_key,
+                                  n_ch=K.int_shape(out)[-1],
+                                  bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
+        out = split_2d(out, reverse=True, temperature=temperature)
         return out
 
     def revnet2d(self, out, level_idx, reverse=False):
@@ -243,6 +276,26 @@ class Squeeze2d(Layer):
         return x
 
 
+class Unsqueeze2d(Layer):
+    factor = 2
+
+    def compute_output_shape(self, input_shape):
+        bs, height, width, n_ch = input_shape
+        factor = self.factor
+        assert n_ch >= factor**2 and n_ch % factor**2 == 0, f'n_ch={n_ch}, input_shape={input_shape}'
+        return [bs, height*factor, width*factor, n_ch//(factor**2)]
+
+    def call(self, inputs, **kwargs):
+        x = inputs
+        factor = self.factor
+        bs, height, width, n_ch = K.int_shape(inputs)
+        assert n_ch >= factor**2 and n_ch % factor**2 == 0, f'n_ch={n_ch}, input_shape={K.int_shape(inputs)}'
+        x = K.reshape(x, [-1, height, width, n_ch//(factor**2), factor, factor])
+        x = K.permute_dimensions(x, [0, 1, 4, 2, 5, 3])
+        x = K.reshape(x, [-1, height*factor, width*factor, n_ch//(factor**2)])
+        return x
+
+
 class Split2d(Network):
     def __init__(self, n_ch, bit_per_sub_pixel_factor, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -251,20 +304,28 @@ class Split2d(Network):
                            kernel_initializer='zero', bias_initializer='zero')
         self.outputs = []  # avoid error in __call__()
 
-    def call(self, inputs, **kwargs):
-        z1, z2 = split_channels(inputs)
+    def call(self, inputs, reverse=False, temperature=None, **kwargs):
+        if not reverse:
+            z1, z2 = split_channels(inputs)  # (w, h, n_ch//2)
 
-        # split2d_prior(z)
-        pz = GaussianDiag(self.conv(z1))
-        z1 = Squeeze2d()(z1)
-        self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)
-        return z1
+            # split2d_prior(z)
+            h = self.conv(z1)  # (w, h, n_ch)
+            pz = GaussianDiag(h)  # (w, h, n_ch//2)
+            out = Squeeze2d()(z1)  # (w//2, h//2, n_ch*2)
+            self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)
+        else:
+            z1 = Unsqueeze2d()(inputs)  # (w, h, n_ch//2)
+            h = self.conv(z1)  # (w, h, n_ch)
+            pz = GaussianDiag(h)  # (w, h, n_ch//2)
+            z2 = pz.sample2(pz.eps * K.reshape(temperature, [-1, 1, 1, 1]))
+            out = K.concatenate([z1, z2], axis=3)
+        return out
 
 
 class GaussianDiag:
     def __init__(self, tensor):
         self.mean, self.logsd = split_channels(tensor)
-        self.eps = K.random_normal(K.shape(self.mean))
+        self.eps = K.random_normal(K.shape(self.mean))  # eps means like temperature
         self.sample = self.mean + K.exp(self.logsd) * self.eps
 
     @classmethod
