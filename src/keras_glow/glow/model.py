@@ -59,49 +59,21 @@ class GlowModel:
         inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key)
         affine_coupling = self.get_layer(AffineCoupling, layer_key,
                                          hidden_channel_size=self.config.model.hidden_channel_size)
-
         if not reverse:
             out = act_norm(out)
             out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
-
-            # implemented only affine(flow) coupling version
-            # out = self.affine_coupling(out, level_idx, depth_idx, reverse=reverse)
-            out = affine_coupling(out)
-
+            out = affine_coupling(out)  # implemented only affine(flow) coupling version
+        else:
+            out = affine_coupling(out, reverse=True)
+            out = inv_1x1_conv(out, reverse=True)
+            out = act_norm(out, reverse=True)
         return out
 
     def split2d(self, out, level_idx):
+        layer_key = f'li-{level_idx}'
+        split_2d = self.get_layer(Split2d, layer_key)
+        out = split_2d(out)
         return out
-
-    # def create_affine_coupling(self, out, reverse=False):
-    #     in_x = out
-    #     n_ch = K.int_shape(in_x)[-1]
-    #     z1, z2 = Lambda(lambda x: (x[:, :, :, :n_ch // 2], x[:, :, :, n_ch // 2:]))(out)
-    #
-    #     # f()
-    #     h = Conv2D(filters=self.config.model.hidden_channel_size,
-    #                kernel_size=3, strides=1, padding="same", use_bias=False)(z1)
-    #     h = ActNorm(use_loss=False)(h)
-    #     h = Activation('relu')(h)
-    #
-    #     h = Conv2D(filters=self.config.model.hidden_channel_size,
-    #                kernel_size=1, strides=1, padding="same", use_bias=False)(h)
-    #     h = ActNorm(use_loss=False)(h)
-    #     h = Activation('relu')(h)
-    #
-    #     h = Conv2D(filters=n_ch, kernel_size=3, padding="same",
-    #                kernel_initializer='zero', bias_initializer='zero')(h)
-    #     #
-    #
-    #     shift, scale = Lambda(lambda x: (x[:, :, :, 0::2], K.exp(x[:, :, :, 1::2])))(h)
-    #     z2 = Add()([z2, shift])
-    #     z2 = Multiply()([z2, scale])
-    #
-    #     out = K.concatenate([z1, z2], axis=3)
-    #
-    #     network = Network(inputs=in_x, outputs=out)
-    #     network.add_loss(K.sum(K.log(scale), axis=[1, 2, 3]))
-    #     return network
 
     def get_layer(self, kls, layer_key, **kwargs):
         if (kls, layer_key) not in self._layers:
@@ -199,27 +171,27 @@ class AffineCoupling(Network):  # FlowCoupling
 
         self.last_conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
                                 kernel_initializer='zero', bias_initializer='zero')
+        super().build(input_shape)
 
     def call(self, inputs, reverse=False, **kwargs):
         z = inputs
-        shape = K.int_shape(z)
-        n_ch = shape[-1]
-        z1 = z[:, :, :, :n_ch // 2]
-        z2 = z[:, :, :, n_ch // 2:]
+        z1, z2 = split_channels(z)
 
-        scale_and_shift = self.nn(z1)  # in_ch is n_ch//2, out_ch should be n_ch
-        scale = K.exp(scale_and_shift[:, :, :, 0::2])  # K.sigmoid(x + 2)  ??
-        shift = scale_and_shift[:, :, :, 1::2]
-        z2 = (z2 + shift) * scale
+        scale, shift = split_channels(self.nn(z1))
+        scale = K.exp(scale)  # K.sigmoid(x + 2)  ??
+        if not reverse:
+            z2 = (z2 + shift) * scale
+            self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
+        else:
+            z2 = z2 / scale - shift
         out = K.concatenate([z1, z2], axis=3)
 
-        if not reverse:
-            self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
         self.inputs = [inputs]
         self.outputs = [out]
         return out
 
     def nn(self, out):
+        """n_ch of output is same as n_ch of input_shape"""
         out = self.conv1(out)
         out = self.actnorm1(out)
         out = Activation('relu')(out)
@@ -251,3 +223,47 @@ class Squeeze2d(Layer):
         return x
 
 
+class Split2d(Network):
+    def build(self, input_shape):
+        n_ch = input_shape[-1]
+        self.conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
+                           kernel_initializer='zero', bias_initializer='zero')
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        z1, z2 = split_channels(inputs)
+
+        # split2d_prior(z)
+        pz = GaussianDiag(self.conv(z1))
+        self.add_loss(-1 * pz.logp(z2))
+        z1 = Squeeze2d()(z1)
+
+        self.inputs = [inputs]
+        self.outputs = [z1]
+        return z1
+
+
+class GaussianDiag:
+    def __init__(self, tensor):
+        self.mean, self.logsd = split_channels(tensor)
+        self.eps = K.random_normal(K.shape(self.mean))
+        self.sample = self.mean + K.exp(self.logsd) * self.eps
+
+    def sample2(self, eps):
+        return self.mean + K.exp(self.logsd) * eps
+
+    def logps(self, x):
+        return -0.5 * (np.log(2 * np.pi) + 2. * self.logsd + (x - self.mean) ** 2 / K.exp(2. * self.logsd))
+
+    def logp(self, x):
+        return K.sum(self.logps(x), axis=list(range(K.ndim))[1:])
+
+
+def split_channels(tensor):
+    n_ch = K.int_shape(tensor)
+    assert K.ndim(tensor) in [2, 4]
+
+    if K.ndim(tensor) == 2:
+        return tensor[:, :n_ch // 2], tensor[:, n_ch // 2:]
+    elif K.ndim(tensor) == 4:
+        return tensor[:, :, :, :n_ch // 2], tensor[:, :, :, n_ch // 2:]
