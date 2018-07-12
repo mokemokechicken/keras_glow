@@ -18,28 +18,37 @@ class GlowModel:
     def __init__(self, config: Config):
         self.config = config
         self._layers = {}
+        self.encoder = None
+        self.bit_per_sub_pixel_factor = None  # type: float
 
     def build(self):
         mc = self.config.model
         dc = self.config.data
         logger.info(mc)
-        in_x = Input(shape=(dc.image_height, dc.image_width, 3), name='image')
+        in_shape = (dc.image_height, dc.image_width, 3)
+        in_x = Input(shape=in_shape, name='image')
+        # to bits per sub pixel
+        self.bit_per_sub_pixel_factor = 1. / np.log(2.) * np.prod(in_shape)
 
         # preprocess
         out = Lambda(lambda x: x / mc.n_bins - 0.5)(in_x)
         # add noise
         out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins))(out)
-        # TODO: add loss
-        # objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])
+        # first squeeze
         out = Squeeze2d()(out)
 
         # encoder
-        encoder_out = self.encoder(out)
-        # TODO: add prior
-        prior = GaussianDiag.prior(K.shape(encoder_out))
-        prior.logp(encoder_out)
+        encoder_out = self.build_encoder(out)
+        self.encoder = Model(inputs=in_x, outputs=encoder_out)
 
-    def encoder(self, out):
+        # add prior loss
+        prior = GaussianDiag.prior(K.shape(encoder_out))
+        self.encoder.add_loss(-prior.logp(encoder_out) * self.bit_per_sub_pixel_factor)
+
+        # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
+        self.encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
+
+    def build_encoder(self, out):
         mc = self.config.model
         for level_idx in range(mc.n_levels):
             out = self.revnet2d(out, level_idx)
@@ -58,19 +67,21 @@ class GlowModel:
         n_ch = shape[-1]
         assert n_ch % 2 == 0, f'n_ch is {n_ch}, shape={shape}'
 
-        act_norm = self.get_layer(ActNorm, layer_key)
-        inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key)
+        act_norm = self.get_layer(ActNorm, layer_key, bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
+        inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key, bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
         if not reverse:
             out = act_norm(out)
             out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
             affine_coupling = self.get_layer(AffineCoupling, layer_key,
                                              n_ch=K.int_shape(out)[-1],
-                                             hidden_channel_size=self.config.model.hidden_channel_size)
+                                             hidden_channel_size=self.config.model.hidden_channel_size,
+                                             bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
             out = affine_coupling(out)  # implemented only affine(flow) coupling version
         else:
             affine_coupling = self.get_layer(AffineCoupling, layer_key,
                                              n_ch=K.int_shape(out)[-1],
-                                             hidden_channel_size=self.config.model.hidden_channel_size)
+                                             hidden_channel_size=self.config.model.hidden_channel_size,
+                                             bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
             out = affine_coupling(out, reverse=True)
             out = inv_1x1_conv(out, reverse=True)
             out = act_norm(out, reverse=True)
@@ -78,7 +89,9 @@ class GlowModel:
 
     def split2d(self, out, level_idx):
         layer_key = f'li-{level_idx}'
-        split_2d = self.get_layer(Split2d, layer_key)
+        split_2d = self.get_layer(Split2d, layer_key,
+                                  n_ch=K.int_shape(out)[-1],
+                                  bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
         out = split_2d(out)
         return out
 
@@ -92,9 +105,10 @@ class ActNorm(Layer):
     log_scale = None
     bias = None
 
-    def __init__(self, use_loss=True, *args, **kwargs):
+    def __init__(self, bit_per_sub_pixel_factor=1, use_loss=True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.use_loss = use_loss
+        self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -117,7 +131,8 @@ class ActNorm(Layer):
         if self.use_loss:
             # Log-Determinant
             # it seems that this is required only for encoding.
-            self.add_loss(-1 * log_det_factor * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
+            self.add_loss(-1 * log_det_factor * K.sum(self.log_scale) * self.bit_per_sub_pixel_factor)
+            # K.sum(self.log_scale) or K.sum(K.abs(self.log_scale)) ???
 
         # final
         super().build(input_shape)
@@ -133,6 +148,10 @@ class ActNorm(Layer):
 class Invertible1x1Conv(Layer):
     rotate_matrix = None  # type: tf.Variable
 
+    def __init__(self, bit_per_sub_pixel_factor, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
+
     def compute_output_shape(self, input_shape):
         return input_shape
 
@@ -146,7 +165,7 @@ class Invertible1x1Conv(Layer):
         # add log-det as loss
         log_det_factor = int(input_shape[1] * input_shape[2])
         log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
-        self.add_loss(-1 * log_det_factor * log_det)
+        self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)
 
         # final
         super().build(input_shape)
@@ -161,9 +180,10 @@ class Invertible1x1Conv(Layer):
 
 
 class AffineCoupling(Network):  # FlowCoupling
-    def __init__(self, n_ch, hidden_channel_size, *args, **kwargs):
+    def __init__(self, n_ch, hidden_channel_size, bit_per_sub_pixel_factor, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hidden_channel_size = hidden_channel_size
+        self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
         self.conv1 = Conv2D(filters=self.hidden_channel_size,
                             kernel_size=3, strides=1, padding="same", use_bias=False)
         self.actnorm1 = ActNorm(use_loss=False)
@@ -184,7 +204,7 @@ class AffineCoupling(Network):  # FlowCoupling
         scale = K.exp(scale)  # K.sigmoid(x + 2)  ??
         if not reverse:
             z2 = (z2 + shift) * scale
-            self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
+            self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]) * self.bit_per_sub_pixel_factor)
         else:
             z2 = z2 / scale - shift
         out = K.concatenate([z1, z2], axis=3)
@@ -224,8 +244,9 @@ class Squeeze2d(Layer):
 
 
 class Split2d(Network):
-    def __init__(self, n_ch, *args, **kwargs):
+    def __init__(self, n_ch, bit_per_sub_pixel_factor, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
         self.conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
         self.outputs = []  # avoid error in __call__()
@@ -236,7 +257,7 @@ class Split2d(Network):
         # split2d_prior(z)
         pz = GaussianDiag(self.conv(z1))
         z1 = Squeeze2d()(z1)
-        self.add_loss(-1 * pz.logp(z2))
+        self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)
         return z1
 
 
