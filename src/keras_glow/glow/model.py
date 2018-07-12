@@ -3,8 +3,9 @@ from logging import getLogger
 import tensorflow as tf
 from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.engine import Layer, Network
-from tensorflow.python.keras.layers import Lambda, Dense, Conv2D
+from tensorflow.python.keras.layers import Lambda, Dense, Conv2D, Activation, Add, Multiply
 from tensorflow.python.keras import initializers
+from tensorflow.python.keras import activations
 from tensorflow.python.keras import backend as K
 
 from keras_glow.config import Config
@@ -56,16 +57,51 @@ class GlowModel:
 
         act_norm = self.get_layer(ActNorm, layer_key)
         inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key)
-        affine_coupling = self.get_layer(AffineCoupling, layer_key)
+        affine_coupling = self.get_layer(AffineCoupling, layer_key,
+                                         hidden_channel_size=self.config.model.hidden_channel_size)
 
         if not reverse:
             out = act_norm(out)
             out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
-            out = affine_coupling(out)  # implemented only affine(flow) coupling version
+
+            # implemented only affine(flow) coupling version
+            # out = self.affine_coupling(out, level_idx, depth_idx, reverse=reverse)
+            out = affine_coupling(out)
+
         return out
 
     def split2d(self, out, level_idx):
         return out
+
+    # def create_affine_coupling(self, out, reverse=False):
+    #     in_x = out
+    #     n_ch = K.int_shape(in_x)[-1]
+    #     z1, z2 = Lambda(lambda x: (x[:, :, :, :n_ch // 2], x[:, :, :, n_ch // 2:]))(out)
+    #
+    #     # f()
+    #     h = Conv2D(filters=self.config.model.hidden_channel_size,
+    #                kernel_size=3, strides=1, padding="same", use_bias=False)(z1)
+    #     h = ActNorm(use_loss=False)(h)
+    #     h = Activation('relu')(h)
+    #
+    #     h = Conv2D(filters=self.config.model.hidden_channel_size,
+    #                kernel_size=1, strides=1, padding="same", use_bias=False)(h)
+    #     h = ActNorm(use_loss=False)(h)
+    #     h = Activation('relu')(h)
+    #
+    #     h = Conv2D(filters=n_ch, kernel_size=3, padding="same",
+    #                kernel_initializer='zero', bias_initializer='zero')(h)
+    #     #
+    #
+    #     shift, scale = Lambda(lambda x: (x[:, :, :, 0::2], K.exp(x[:, :, :, 1::2])))(h)
+    #     z2 = Add()([z2, shift])
+    #     z2 = Multiply()([z2, scale])
+    #
+    #     out = K.concatenate([z1, z2], axis=3)
+    #
+    #     network = Network(inputs=in_x, outputs=out)
+    #     network.add_loss(K.sum(K.log(scale), axis=[1, 2, 3]))
+    #     return network
 
     def get_layer(self, kls, layer_key, **kwargs):
         if (kls, layer_key) not in self._layers:
@@ -76,6 +112,10 @@ class GlowModel:
 class ActNorm(Layer):
     log_scale = None
     bias = None
+
+    def __init__(self, use_loss=True, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.use_loss = use_loss
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -95,9 +135,10 @@ class ActNorm(Layer):
         self.log_scale = self.add_weight('log_scale', shape=var_shape, initializer='zeros')
         self.bias = self.add_weight('bias', shape=var_shape, initializer='zeros')
 
-        # Log-Determinant
-        # it seems that this is required only for encoding.
-        self.add_loss(-1 * log_det_factor * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
+        if self.use_loss:
+            # Log-Determinant
+            # it seems that this is required only for encoding.
+            self.add_loss(-1 * log_det_factor * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
 
         # final
         super().build(input_shape)
@@ -140,14 +181,26 @@ class Invertible1x1Conv(Layer):
         return z
 
 
-class AffineCoupling(Layer):  # FlowCoupling
-    def compute_output_shape(self, input_shape):
-        return input_shape
+class AffineCoupling(Network):  # FlowCoupling
+    def __init__(self, hidden_channel_size, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hidden_channel_size = hidden_channel_size
 
     def build(self, input_shape):
         n_ch = input_shape[-1]
 
-    def call(self, inputs, **kwargs):
+        self.conv1 = Conv2D(filters=self.hidden_channel_size,
+                            kernel_size=3, strides=1, padding="same", use_bias=False)
+        self.actnorm1 = ActNorm(use_loss=False)
+
+        self.conv2 = Conv2D(filters=self.hidden_channel_size,
+                            kernel_size=1, strides=1, padding="same", use_bias=False)
+        self.actnorm2 = ActNorm(use_loss=False)
+
+        self.last_conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
+                                kernel_initializer='zero', bias_initializer='zero')
+
+    def call(self, inputs, reverse=False, **kwargs):
         z = inputs
         shape = K.int_shape(z)
         n_ch = shape[-1]
@@ -160,11 +213,23 @@ class AffineCoupling(Layer):  # FlowCoupling
         z2 = (z2 + shift) * scale
         out = K.concatenate([z1, z2], axis=3)
 
-        self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
+        if not reverse:
+            self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
+        self.inputs = [inputs]
+        self.outputs = [out]
         return out
 
-    def nn(self, z1):
-        return K.concatenate([z1, z1], axis=3)
+    def nn(self, out):
+        out = self.conv1(out)
+        out = self.actnorm1(out)
+        out = Activation('relu')(out)
+
+        out = self.conv2(out)
+        out = self.actnorm2(out)
+        out = Activation('relu')(out)
+
+        out = self.last_conv(out)
+        return out
 
 
 class Squeeze2d(Layer):
@@ -184,3 +249,5 @@ class Squeeze2d(Layer):
         x = K.permute_dimensions(x, [0, 1, 3, 5, 2, 4])
         x = K.reshape(x, [-1, height // factor, width // factor, n_ch * factor * factor])
         return x
+
+
