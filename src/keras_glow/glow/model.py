@@ -34,7 +34,10 @@ class GlowModel:
         out = Squeeze2d()(out)
 
         # encoder
-        out = self.encoder(out)
+        encoder_out = self.encoder(out)
+        # TODO: add prior
+        prior = GaussianDiag.prior(K.shape(encoder_out))
+        prior.logp(encoder_out)
 
     def encoder(self, out):
         mc = self.config.model
@@ -57,13 +60,17 @@ class GlowModel:
 
         act_norm = self.get_layer(ActNorm, layer_key)
         inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key)
-        affine_coupling = self.get_layer(AffineCoupling, layer_key,
-                                         hidden_channel_size=self.config.model.hidden_channel_size)
         if not reverse:
             out = act_norm(out)
             out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
+            affine_coupling = self.get_layer(AffineCoupling, layer_key,
+                                             n_ch=K.int_shape(out)[-1],
+                                             hidden_channel_size=self.config.model.hidden_channel_size)
             out = affine_coupling(out)  # implemented only affine(flow) coupling version
         else:
+            affine_coupling = self.get_layer(AffineCoupling, layer_key,
+                                             n_ch=K.int_shape(out)[-1],
+                                             hidden_channel_size=self.config.model.hidden_channel_size)
             out = affine_coupling(out, reverse=True)
             out = inv_1x1_conv(out, reverse=True)
             out = act_norm(out, reverse=True)
@@ -154,13 +161,9 @@ class Invertible1x1Conv(Layer):
 
 
 class AffineCoupling(Network):  # FlowCoupling
-    def __init__(self, hidden_channel_size, *args, **kwargs):
+    def __init__(self, n_ch, hidden_channel_size, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hidden_channel_size = hidden_channel_size
-
-    def build(self, input_shape):
-        n_ch = input_shape[-1]
-
         self.conv1 = Conv2D(filters=self.hidden_channel_size,
                             kernel_size=3, strides=1, padding="same", use_bias=False)
         self.actnorm1 = ActNorm(use_loss=False)
@@ -171,7 +174,7 @@ class AffineCoupling(Network):  # FlowCoupling
 
         self.last_conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
                                 kernel_initializer='zero', bias_initializer='zero')
-        super().build(input_shape)
+        self.outputs = []  # avoid error when __call__()
 
     def call(self, inputs, reverse=False, **kwargs):
         z = inputs
@@ -185,9 +188,6 @@ class AffineCoupling(Network):  # FlowCoupling
         else:
             z2 = z2 / scale - shift
         out = K.concatenate([z1, z2], axis=3)
-
-        self.inputs = [inputs]
-        self.outputs = [out]
         return out
 
     def nn(self, out):
@@ -224,22 +224,19 @@ class Squeeze2d(Layer):
 
 
 class Split2d(Network):
-    def build(self, input_shape):
-        n_ch = input_shape[-1]
+    def __init__(self, n_ch, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
-        super().build(input_shape)
+        self.outputs = []  # avoid error in __call__()
 
     def call(self, inputs, **kwargs):
         z1, z2 = split_channels(inputs)
 
         # split2d_prior(z)
         pz = GaussianDiag(self.conv(z1))
-        self.add_loss(-1 * pz.logp(z2))
         z1 = Squeeze2d()(z1)
-
-        self.inputs = [inputs]
-        self.outputs = [z1]
+        self.add_loss(-1 * pz.logp(z2))
         return z1
 
 
@@ -249,6 +246,11 @@ class GaussianDiag:
         self.eps = K.random_normal(K.shape(self.mean))
         self.sample = self.mean + K.exp(self.logsd) * self.eps
 
+    @classmethod
+    def prior(cls, shape):
+        tensor = K.concatenate([K.zeros(shape), K.zeros(shape)], axis=-1)
+        return cls(tensor)
+
     def sample2(self, eps):
         return self.mean + K.exp(self.logsd) * eps
 
@@ -256,11 +258,11 @@ class GaussianDiag:
         return -0.5 * (np.log(2 * np.pi) + 2. * self.logsd + (x - self.mean) ** 2 / K.exp(2. * self.logsd))
 
     def logp(self, x):
-        return K.sum(self.logps(x), axis=list(range(K.ndim))[1:])
+        return K.sum(self.logps(x), axis=list(range(K.ndim(x)))[1:])
 
 
 def split_channels(tensor):
-    n_ch = K.int_shape(tensor)
+    n_ch = K.int_shape(tensor)[-1]
     assert K.ndim(tensor) in [2, 4]
 
     if K.ndim(tensor) == 2:
