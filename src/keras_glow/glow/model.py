@@ -1,9 +1,10 @@
 from logging import getLogger
 
 import tensorflow as tf
-from tensorflow.python.keras import Input
-from tensorflow.python.keras.engine import Layer
+from tensorflow.python.keras import Input, Model
+from tensorflow.python.keras.engine import Layer, Network
 from tensorflow.python.keras.layers import Lambda, Dense, Conv2D
+from tensorflow.python.keras import initializers
 from tensorflow.python.keras import backend as K
 
 from keras_glow.config import Config
@@ -25,6 +26,12 @@ class GlowModel:
 
         # preprocess
         out = Lambda(lambda x: x / mc.n_bins - 0.5)(in_x)
+        # add noise
+        out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins))(out)
+        # TODO: add loss
+        # objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])
+        out = Squeeze2d()(out)
+
         # encoder
         out = self.encoder(out)
 
@@ -43,9 +50,9 @@ class GlowModel:
 
     def revnet2d_step(self, out, level_idx, depth_idx, reverse=False):
         layer_key = f'li-{level_idx}/di-{depth_idx:02d}'
-        shape = K.int_shape(out)  # tuple of (None, H, W, C)
-        n_ch = shape[3]
-        assert n_ch % 2 == 0
+        shape = K.int_shape(out)  # tuple of (H, W, C)
+        n_ch = shape[-1]
+        assert n_ch % 2 == 0, f'n_ch is {n_ch}, shape={shape}'
 
         act_norm = self.get_layer(ActNorm, layer_key)
         inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key)
@@ -82,7 +89,7 @@ class ActNorm(Layer):
             log_det_factor = 1
         else:
             var_shape = (1, 1, 1, n_ch)
-            log_det_factor = input_shape[1]*input_shape[2]
+            log_det_factor = int(input_shape[1]*input_shape[2])
 
         # DDI(Data-Dependent-Init?) is not implemented
         self.log_scale = self.add_weight('log_scale', shape=var_shape, initializer='zeros')
@@ -90,13 +97,13 @@ class ActNorm(Layer):
 
         # Log-Determinant
         # it seems that this is required only for encoding.
-        self.add_loss(-log_det_factor * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
+        self.add_loss(-1 * log_det_factor * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
 
         # final
         super().build(input_shape)
 
     def call(self, inputs, reverse=False, **kwargs):
-        x = inputs[0]
+        x = inputs
         if not reverse:
             return (x + self.bias) * K.exp(self.log_scale)
         else:
@@ -114,12 +121,12 @@ class Invertible1x1Conv(Layer):
 
         # Sample a random orthogonal matrix:
         w_init = np.linalg.qr(np.random.randn(*w_shape))[0].astype('float32')
-        self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=w_init)
+        self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=initializers.constant(w_init))
 
         # add log-det as loss
-        log_det_factor = input_shape[1] * input_shape[2]
+        log_det_factor = int(input_shape[1] * input_shape[2])
         log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
-        self.add_loss(-log_det_factor * log_det)
+        self.add_loss(-1 * log_det_factor * log_det)
 
         # final
         super().build(input_shape)
@@ -129,7 +136,7 @@ class Invertible1x1Conv(Layer):
         if reverse:
             w = tf.matrix_inverse(w)
         w = tf.expand_dims(tf.expand_dims(w, axis=0), axis=0)
-        z = tf.nn.conv2d(inputs[0], w, [1, 1, 1, 1], 'SAME', data_format='NHWC')
+        z = tf.nn.conv2d(inputs, w, [1, 1, 1, 1], 'SAME', data_format='NHWC')
         return z
 
 
@@ -139,10 +146,9 @@ class AffineCoupling(Layer):  # FlowCoupling
 
     def build(self, input_shape):
         n_ch = input_shape[-1]
-        
 
     def call(self, inputs, **kwargs):
-        z = inputs[0]
+        z = inputs
         shape = K.int_shape(z)
         n_ch = shape[-1]
         z1 = z[:, :, :, :n_ch // 2]
@@ -156,3 +162,25 @@ class AffineCoupling(Layer):  # FlowCoupling
 
         self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
         return out
+
+    def nn(self, z1):
+        return K.concatenate([z1, z1], axis=3)
+
+
+class Squeeze2d(Layer):
+    factor = 2
+
+    def compute_output_shape(self, input_shape):
+        assert input_shape[1] % self.factor == 0 and input_shape[2] % self.factor == 0, f'{input_shape}, {self.factor}'
+        return [input_shape[0],
+                input_shape[1]//self.factor, input_shape[2]//self.factor,
+                input_shape[3]*self.factor*self.factor]
+
+    def call(self, inputs, **kwargs):
+        x = inputs
+        _, height, width, n_ch = K.int_shape(x)
+        factor = self.factor
+        x = K.reshape(x, [-1, height // factor, factor, width // factor, factor, n_ch])
+        x = K.permute_dimensions(x, [0, 1, 3, 5, 2, 4])
+        x = K.reshape(x, [-1, height // factor, width // factor, n_ch * factor * factor])
+        return x
