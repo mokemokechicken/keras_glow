@@ -1,5 +1,6 @@
 from logging import getLogger
 
+import tensorflow as tf
 from tensorflow.python.keras import Input
 from tensorflow.python.keras.engine import Layer
 from tensorflow.python.keras.layers import Lambda, Dense
@@ -67,7 +68,12 @@ class ActNorm(Layer):
         n_ch = input_shape[-1]
         assert len(input_shape) in (2, 4), f'invalid input_shape={input_shape}'
 
-        var_shape = (1, n_ch) if len(input_shape) == 2 else (1, 1, 1, n_ch)
+        if len(input_shape) == 2:
+            var_shape = (1, n_ch)
+            log_det_factor = 1
+        else:
+            var_shape = (1, 1, 1, n_ch)
+            log_det_factor = input_shape[1]*input_shape[2]
 
         # DDI(Data-Dependent-Init?) is not implemented
         self.log_scale = self.add_weight('log_scale', shape=var_shape, initializer='zeros')
@@ -75,7 +81,7 @@ class ActNorm(Layer):
 
         # Log-Determinant
         # it seems that this is required only for encoding.
-        self.add_loss(-1 * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
+        self.add_loss(-log_det_factor * K.sum(self.log_scale))  # or K.sum(K.abs(self.log_scale)) ???
 
         # final
         super().build(input_shape)
@@ -89,19 +95,31 @@ class ActNorm(Layer):
 
 
 class Invertible1x1Conv(Layer):
-    rotate_matrix = None
+    rotate_matrix = None  # type: tf.Variable
 
     def compute_output_shape(self, input_shape):
         return input_shape
 
     def build(self, input_shape):
-        # TODO: impl
         w_shape = [input_shape[3], input_shape[3]]  # [n_channel, n_channel]
+
         # Sample a random orthogonal matrix:
         w_init = np.linalg.qr(np.random.randn(*w_shape))[0].astype('float32')
-
         self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=w_init)
 
-    def call(self, inputs, **kwargs):
-        # TODO: impl
-        pass
+        # add log-det as loss
+        log_det_factor = input_shape[1] * input_shape[2]
+        log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
+        self.add_loss(-log_det_factor * log_det)
+
+        # final
+        super().build(input_shape)
+
+    def call(self, inputs, reverse=False, **kwargs):
+        w = self.rotate_matrix
+        if reverse:
+            w = tf.matrix_inverse(w)
+        w = tf.expand_dims(tf.expand_dims(w, axis=0), axis=0)
+        z = tf.nn.conv2d(inputs[0], w, [1, 1, 1, 1], 'SAME', data_format='NHWC')
+        return z
+
