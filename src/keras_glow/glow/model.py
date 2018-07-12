@@ -19,10 +19,12 @@ class GlowModel:
         self.config = config
         self._layers = {}
         self.encoder = None  # type: Model
+        self.decoder = None  # type: Model
         self.bit_per_sub_pixel_factor = None  # type: float
 
     def build(self):
         self.encoder = self.build_encoder()
+        self.decoder = self.build_decoder()
 
     def build_encoder(self):
         mc = self.config.model
@@ -62,7 +64,7 @@ class GlowModel:
         return out
 
     def build_decoder(self, z_shape=None):
-        z_shape = z_shape or K.int_shape(self.encoder.output)
+        z_shape = z_shape or K.int_shape(self.encoder.output)[1:]
 
         mc = self.config.model
         z_in = Input(shape=z_shape, name="z_in")
@@ -345,7 +347,7 @@ class GaussianDiag:
 
 def split_channels(tensor):
     n_ch = K.int_shape(tensor)[-1]
-    assert K.ndim(tensor) in [2, 4]
+    assert K.ndim(tensor) in [2, 4], f'tensor shape={K.int_shape(tensor)}'
 
     if K.ndim(tensor) == 2:
         return tensor[:, :n_ch // 2], tensor[:, n_ch // 2:]
