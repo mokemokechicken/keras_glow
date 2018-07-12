@@ -58,6 +58,7 @@ class ModelConfig(ConfigBase):
         self.n_bins = 256
         self.n_levels = 2  # 4
         self.n_depth = 4   # 32
+        self.hidden_channel_size = 16  # 512
 
 
 class TrainingConfig(ConfigBase):

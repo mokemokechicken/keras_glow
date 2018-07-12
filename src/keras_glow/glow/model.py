@@ -3,7 +3,7 @@ from logging import getLogger
 import tensorflow as tf
 from tensorflow.python.keras import Input
 from tensorflow.python.keras.engine import Layer
-from tensorflow.python.keras.layers import Lambda, Dense
+from tensorflow.python.keras.layers import Lambda, Dense, Conv2D
 from tensorflow.python.keras import backend as K
 
 from keras_glow.config import Config
@@ -31,30 +31,39 @@ class GlowModel:
     def encoder(self, out):
         mc = self.config.model
         for level_idx in range(mc.n_levels):
-            out = self.revnet2d(level_idx, out)
+            out = self.revnet2d(out, level_idx)
             if level_idx < mc.n_levels - 1:
-                out = self.split2d(level_idx, out)
+                out = self.split2d(out, level_idx)
         return out
 
-    def revnet2d(self, level_idx, out, reverse=False):
+    def revnet2d(self, out, level_idx, reverse=False):
+        for depth_idx in range(self.config.model.n_depth):
+            out = self.revnet2d_step(out, level_idx, depth_idx, reverse=reverse)
+        return out
+
+    def revnet2d_step(self, out, level_idx, depth_idx, reverse=False):
+        layer_key = f'li-{level_idx}/di-{depth_idx:02d}'
         shape = K.int_shape(out)  # tuple of (None, H, W, C)
         n_ch = shape[3]
         assert n_ch % 2 == 0
 
-        act_norm = self.get_layer(ActNorm, level_idx)
+        act_norm = self.get_layer(ActNorm, layer_key)
+        inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key)
+        affine_coupling = self.get_layer(AffineCoupling, layer_key)
 
         if not reverse:
             out = act_norm(out)
-
+            out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
+            out = affine_coupling(out)  # implemented only affine(flow) coupling version
         return out
 
-    def split2d(self, level_idx, out):
+    def split2d(self, out, level_idx):
         return out
 
-    def get_layer(self, kls, index, **kwargs):
-        if (kls, index) not in self._layers:
-            self._layers[(kls, index)] = kls(name=f'{kls.__name__}-{index}', **kwargs)
-        return self._layers.get((kls, index))
+    def get_layer(self, kls, layer_key, **kwargs):
+        if (kls, layer_key) not in self._layers:
+            self._layers[(kls, layer_key)] = kls(name=f'{kls.__name__}/{layer_key}', **kwargs)
+        return self._layers.get((kls, layer_key))
 
 
 class ActNorm(Layer):
@@ -123,3 +132,27 @@ class Invertible1x1Conv(Layer):
         z = tf.nn.conv2d(inputs[0], w, [1, 1, 1, 1], 'SAME', data_format='NHWC')
         return z
 
+
+class AffineCoupling(Layer):  # FlowCoupling
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    def build(self, input_shape):
+        n_ch = input_shape[-1]
+        
+
+    def call(self, inputs, **kwargs):
+        z = inputs[0]
+        shape = K.int_shape(z)
+        n_ch = shape[-1]
+        z1 = z[:, :, :, :n_ch // 2]
+        z2 = z[:, :, :, n_ch // 2:]
+
+        scale_and_shift = self.nn(z1)  # in_ch is n_ch//2, out_ch should be n_ch
+        scale = K.exp(scale_and_shift[:, :, :, 0::2])  # K.sigmoid(x + 2)  ??
+        shift = scale_and_shift[:, :, :, 1::2]
+        z2 = (z2 + shift) * scale
+        out = K.concatenate([z1, z2], axis=3)
+
+        self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]))
+        return out
