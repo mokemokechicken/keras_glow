@@ -2,7 +2,7 @@ from logging import getLogger
 
 import numpy as np
 from tensorflow.python.keras import backend as K
-from tensorflow.python.keras.callbacks import TensorBoard, Callback
+from tensorflow.python.keras.callbacks import TensorBoard, Callback, ReduceLROnPlateau
 from tensorflow.python.keras.optimizers import Adam
 
 from keras_glow.config import Config
@@ -31,6 +31,7 @@ class Trainer:
         callbacks = [
             SamplingCallback(self.config, model),
             TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
+            ReduceLROnPlateau(monitor='loss', factor=0.1, patience=1, verbose=1),
         ]
         model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
                                     steps_per_epoch=steps_per_epoch,
@@ -50,6 +51,7 @@ class SamplingCallback(Callback):
     def on_epoch_end(self, epoch, logs=None):
         logger.debug(f"logs={logs}")
         sample_n_epoch = self.config.training.sample_every_n_epoch
+        self.save_model()
         if not sample_n_epoch:
             return
         if epoch % sample_n_epoch == 0:
@@ -61,6 +63,9 @@ class SamplingCallback(Callback):
         agent = Agent(self.config, self.glow_model)
         image_path_base = f'{self.config.resource.sample_dir}/ep{epoch:04d}/img'
         agent.sample_to_save(self.config.training.sample_n_image, image_path_base=image_path_base)
+
+    def save_model(self):
+        self.glow_model.save_all()
 
 
 def zero_loss(y_true, y_pred):
