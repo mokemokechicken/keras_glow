@@ -12,6 +12,7 @@ pillow = "*"
 "beautifulsoup4" = "*"
 requests = "*"
 "h5py" = "*"
+tensorflow-gpu = "*"
 
 [dev-packages]
 

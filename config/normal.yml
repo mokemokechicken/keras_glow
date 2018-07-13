@@ -3,12 +3,14 @@ data:
   image_height: 64
 
 model:
-  n_levels: 4
-  n_depth: 32
+  n_levels: 4  # 4
+  n_depth: 8  # 32
   hidden_channel_size: 256
 
 training:
-  batch_size: 8
-  epochs: 1000
-  steps_per_epoch: null
-  lr: 0.0001
+  batch_size: 1
+  epochs: 10000
+  steps_per_epoch: 1000
+  lr: 0.00001
+  lr_patience: 5
+  lr_decay: 0.1

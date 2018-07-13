@@ -31,7 +31,7 @@ class Trainer:
         callbacks = [
             SamplingCallback(self.config, model),
             TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
-            ReduceLROnPlateau(monitor='loss', factor=0.1, patience=1, verbose=1),
+            ReduceLROnPlateau(monitor='loss', factor=tc.lr_decay, patience=tc.lr_patience, verbose=1),
         ]
         model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
                                     steps_per_epoch=steps_per_epoch,

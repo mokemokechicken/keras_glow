@@ -74,6 +74,8 @@ class TrainingConfig(ConfigBase):
     def __init__(self):
         self.batch_size = 1
         self.lr = 0.0001
+        self.lr_patience = 5
+        self.lr_decay = 0.1
         self.epochs = 10
         self.steps_per_epoch = 1  # None means auto calculated
         self.sample_every_n_epoch = 5
