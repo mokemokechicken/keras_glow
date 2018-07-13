@@ -32,7 +32,8 @@ class Trainer:
             TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
         ]
         model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
-                                    steps_per_epoch=1,  # dp.image_count//tc.batch_size,  # TODO: fix back
+                                    # steps_per_epoch=1,
+                                    steps_per_epoch=dp.image_count//tc.batch_size,
                                     callbacks=callbacks, verbose=1)
 
     def compile(self, model: GlowModel):
@@ -41,8 +42,4 @@ class Trainer:
 
 
 def zero_loss(y_true, y_pred):
-    # return K.constant(0., dtype='float32')
-    return mean_squared_error(y_true, y_pred)
-
-
-
+    return K.constant(0., dtype='float32')
