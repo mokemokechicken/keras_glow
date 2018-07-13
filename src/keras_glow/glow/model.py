@@ -24,14 +24,16 @@ class GlowModel:
 
     def build(self):
         self.encoder = self.build_encoder()
-        self.decoder = self.build_decoder()
+        # self.decoder = self.build_decoder()
 
     def save_all(self):
         rc = self.config.resource
-        logger.info(f"saving encoder to {rc.encoder_path}")
-        self.encoder.save(rc.encoder_path)
-        logger.info(f"saving decoder to {rc.decoder_path}")
-        self.decoder.save(rc.decoder_path, include_optimizer=False)
+        if self.encoder is not None:
+            logger.info(f"saving encoder to {rc.encoder_path}")
+            self.encoder.save(rc.encoder_path)
+        if self.decoder is not None:
+            logger.info(f"saving decoder to {rc.decoder_path}")
+            self.decoder.save(rc.decoder_path, include_optimizer=False)
 
     def load_all(self):
         rc = self.config.resource
@@ -46,11 +48,12 @@ class GlowModel:
             Unsqueeze2d=Unsqueeze2d,
             Split2d=Split2d,
         )
-
-        logger.info(f"loading encoder from {rc.encoder_path}")
-        self.encoder = load_model(rc.encoder_path, custom_objects=custom_objects, compile=False)
-        logger.info(f"loading decoder from {rc.decoder_path}")
-        self.decoder = load_model(rc.decoder_path, custom_objects=custom_objects, compile=False)
+        if rc.encoder_path.exists():
+            logger.info(f"loading encoder from {rc.encoder_path}")
+            self.encoder = load_model(rc.encoder_path, custom_objects=custom_objects, compile=False)
+        if rc.decoder_path.exists():
+            logger.info(f"loading decoder from {rc.decoder_path}")
+            self.decoder = load_model(rc.decoder_path, custom_objects=custom_objects, compile=False)
 
     def build_encoder(self):
         mc = self.config.model
@@ -91,7 +94,6 @@ class GlowModel:
 
     def build_decoder(self, z_shape=None):
         mc = self.config.model
-        n_bins = mc.n_bins
         z_shape = z_shape or K.int_shape(self.encoder.output)[1:]
 
         # Placeholder
@@ -146,7 +148,10 @@ class GlowModel:
         split_2d = self.get_layer(Split2d, layer_key,
                                   n_ch=K.int_shape(out)[-1],
                                   bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
-        out = split_2d(out, reverse=reverse, temperature=temperature)
+        if not reverse:
+            out = split_2d(out, reverse=reverse)
+        else:
+            out = split_2d([out, temperature], reverse=reverse)
         return out
 
     def get_layer(self, kls, layer_key, **kwargs):

@@ -189,6 +189,7 @@ class AffineCoupling(Network):  # FlowCoupling
         logger.debug(f'init: {self.name}')
 
     def call(self, inputs, reverse=False, **kwargs):
+        logger.debug(f'{self.name} call(): {inputs}')
         z = inputs
         z1, z2 = split_channels(z)
 
@@ -280,7 +281,7 @@ class Split2d(Network):
         self.outputs = []  # avoid error in __call__()
         logger.debug(f'init: {self.name}')
 
-    def call(self, inputs, reverse=False, temperature=None, **kwargs):
+    def call(self, inputs, reverse=False, **kwargs):
         if not reverse:
             z1, z2 = split_channels(inputs)  # (w, h, n_ch//2)
 
@@ -292,7 +293,7 @@ class Split2d(Network):
             out = z1
         else:
             # z1 = Unsqueeze2d()(inputs)  # (w, h, n_ch//2)  # move to decoder_loop() for corresponding to the paper
-            z1 = inputs
+            z1, temperature = inputs
             h = self.conv(z1)  # (w, h, n_ch)
             pz = GaussianDiag(h)  # (w, h, n_ch//2)
             z2 = pz.sample2(pz.eps * K.reshape(temperature, [-1, 1, 1, 1]))
