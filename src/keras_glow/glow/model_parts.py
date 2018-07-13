@@ -148,7 +148,7 @@ class Invertible1x1Conv(Layer):
         log_det_factor = int(input_shape[1] * input_shape[2])
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)) + K.epsilon())
-        log_det = tf.log(tf.clip_by_value(tf.matrix_determinant(self.rotate_matrix), 0.9, 1.1))
+        log_det = tf.log(tf.clip_by_value(tf.matrix_determinant(self.rotate_matrix), 0.001, 1000))
         self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)
 
         # final

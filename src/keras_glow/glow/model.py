@@ -79,10 +79,10 @@ class GlowModel:
 
         # add prior loss
         prior = GaussianDiag.prior(K.shape(encoder_loop_out))
-        encoder.add_loss(K.cast(K.sum(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor), dtype='float32'))
+        encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)
 
         # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
-        encoder.add_loss(K.cast(K.sum(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor), dtype='float32'))
+        encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
         return encoder
 
     def build_encoder_loop(self, out):

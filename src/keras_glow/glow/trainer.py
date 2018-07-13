@@ -30,7 +30,9 @@ class Trainer:
 
         callbacks = [
             SamplingCallback(self.config, model),
-            TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
+            TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True,
+                        # histogram_freq=5, write_grads=True
+                        ),
             ReduceLROnPlateau(monitor='loss', factor=tc.lr_decay, patience=tc.lr_patience, verbose=1),
         ]
         model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
@@ -49,7 +51,7 @@ class SamplingCallback(Callback):
         super().__init__()
 
     def on_epoch_end(self, epoch, logs=None):
-        logger.debug(f"logs={logs}")
+        # logger.debug(f"logs={logs}")
         sample_n_epoch = self.config.training.sample_every_n_epoch
         self.save_model()
         if not sample_n_epoch:
