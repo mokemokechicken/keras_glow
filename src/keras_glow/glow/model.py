@@ -161,4 +161,8 @@ class GlowModel:
             self._layers[(kls, layer_key)] = kls(name=f'{kls.__name__}/{layer_key}', **kwargs)
         return self._layers.get((kls, layer_key))
 
-
+    @property
+    def decoder_input_shape(self):
+        if self.decoder is not None:
+            return K.int_shape(self.decoder.input[0])[1:]
+        return None

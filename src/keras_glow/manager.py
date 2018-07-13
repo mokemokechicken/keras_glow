@@ -13,16 +13,20 @@ logger = getLogger(__name__)
 
 def create_parser():
     parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
 
     def add_common_options(p):
         p.add_argument("--config", help="specify config file")
         p.add_argument("--log-level", help="specify Log Level(debug/info/warning/error): default=info",
                        choices=['debug', 'info', 'warning', 'error'])
 
-    sub = parser.add_subparsers()
-    parser_training = sub.add_parser("training")
-    parser_training.set_defaults(command='training')
-    add_common_options(parser_training)
+    sub_parser = sub.add_parser("training")
+    sub_parser.set_defaults(command='training')
+    add_common_options(sub_parser)
+
+    sub_parser = sub.add_parser("sampling")
+    sub_parser.set_defaults(command='sampling')
+    add_common_options(sub_parser)
     return parser
 
 

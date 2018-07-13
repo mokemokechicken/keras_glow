@@ -24,15 +24,12 @@ class TrainingCommand:
         #     print(y.shape)
 
         model = GlowModel(self.config)
-
-        model.load_all()
-
         model.build()
 
-        with open("enc.json", "wt") as f:
-            f.write(json.dumps(model.encoder.get_config(), indent=2))
-        with open("dec.json", "wt") as f:
-            f.write(json.dumps(model.decoder.get_config(), indent=2))
+        # with open("enc.json", "wt") as f:
+        #     f.write(json.dumps(model.encoder.get_config(), indent=2))
+        # with open("dec.json", "wt") as f:
+        #     f.write(json.dumps(model.decoder.get_config(), indent=2))
 
         trainer = Trainer(self.config)
         trainer.fit(model, dp)

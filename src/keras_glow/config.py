@@ -35,10 +35,14 @@ class ResourceConfig(ConfigBase):
         self.data_dir = self.system_dir / 'data'
         self.image_dir = self.data_dir / 'image'
         self.model_dir = self.data_dir / 'model'
+        self.sample_dir = self.data_dir / 'sample'
 
         # Model
         self.encoder_path = self.model_dir / 'encoder.h5'
         self.decoder_path = self.model_dir / 'decoder.h5'
+
+        # Sample
+        self.sample_image_base = self.sample_dir / 'img'
 
         # Log
         self.log_dir = self.system_dir / "log"
@@ -46,7 +50,7 @@ class ResourceConfig(ConfigBase):
         self.main_log_path = self.log_dir / "main.log"
 
     def create_base_dirs(self):
-        dirs = [self.log_dir, self.model_dir]
+        dirs = [self.log_dir, self.model_dir, self.sample_dir]
 
         for d in dirs:
             os.makedirs(d, exist_ok=True)

@@ -201,7 +201,6 @@ class AffineCoupling(Network):  # FlowCoupling
             output_tensors=self.outputs)
 
     def call(self, inputs, reverse=False, **kwargs):
-        logger.debug(f'{self.name} call(): {inputs}')
         z = inputs
         z1, z2 = split_channels(z)
 
