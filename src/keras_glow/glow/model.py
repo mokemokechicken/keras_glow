@@ -4,8 +4,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras import backend as K
+from tensorflow.python.keras.engine import Network
 from tensorflow.python.keras.layers import Lambda
 from tensorflow.python.keras.models import load_model
+from tensorflow.python.layers.core import Dense
 
 from keras_glow.config import Config
 from keras_glow.glow.model_parts import ActNorm, Invertible1x1Conv, AffineCoupling, Squeeze2d, Unsqueeze2d, Split2d, \
@@ -24,7 +26,7 @@ class GlowModel:
 
     def build(self):
         self.encoder = self.build_encoder()
-        # self.decoder = self.build_decoder()
+        self.decoder = self.build_decoder()
 
     def save_all(self):
         rc = self.config.resource
@@ -129,13 +131,13 @@ class GlowModel:
             out = act_norm(out)
             out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
             affine_coupling = self.get_layer(AffineCoupling, layer_key,
-                                             n_ch=K.int_shape(out)[-1],
+                                             in_shape=K.int_shape(out),
                                              hidden_channel_size=self.config.model.hidden_channel_size,
                                              bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
             out = affine_coupling(out)  # implemented only affine(flow) coupling version
         else:
             affine_coupling = self.get_layer(AffineCoupling, layer_key,
-                                             n_ch=K.int_shape(out)[-1],
+                                             in_shape=K.int_shape(out),
                                              hidden_channel_size=self.config.model.hidden_channel_size,
                                              bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
             out = affine_coupling(out, reverse=True)
@@ -146,7 +148,7 @@ class GlowModel:
     def split2d(self, out, level_idx, reverse=False, temperature=None):
         layer_key = f'li-{level_idx}'
         split_2d = self.get_layer(Split2d, layer_key,
-                                  n_ch=K.int_shape(out)[-1],
+                                  in_shape=K.int_shape(out),
                                   bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
         if not reverse:
             out = split_2d(out, reverse=reverse)

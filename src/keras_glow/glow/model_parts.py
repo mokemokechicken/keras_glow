@@ -2,8 +2,8 @@ from logging import getLogger
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.keras import backend as K, initializers
-from tensorflow.python.keras.engine import Layer, Network
+from tensorflow.python.keras import backend as K, initializers, Input
+from tensorflow.python.keras.engine import Layer, Network, base_layer
 from tensorflow.python.keras.layers import Conv2D, Activation
 
 
@@ -170,11 +170,12 @@ class Invertible1x1Conv(Layer):
 
 
 class AffineCoupling(Network):  # FlowCoupling
-    def __init__(self, n_ch=None, hidden_channel_size=None, bit_per_sub_pixel_factor=None, *args, **kwargs):
+    def __init__(self, in_shape=None, hidden_channel_size=None, bit_per_sub_pixel_factor=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.n_ch = n_ch
+        self.in_shape = in_shape
         self.hidden_channel_size = hidden_channel_size
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
+        self.in_x = Input(shape=self.in_shape)
         self.conv1 = Conv2D(filters=self.hidden_channel_size, name=f'{self.name}/conv1',
                             kernel_size=3, strides=1, padding="same", use_bias=False)
         self.actnorm1 = ActNorm(use_loss=False, name=f'{self.name}/actnorm1')
@@ -183,10 +184,21 @@ class AffineCoupling(Network):  # FlowCoupling
                             kernel_size=1, strides=1, padding="same", use_bias=False)
         self.actnorm2 = ActNorm(use_loss=False, name=f'{self.name}/actnorm2')
 
-        self.last_conv = Conv2D(filters=n_ch, kernel_size=3, padding="same", name=f'{self.name}/last_conv',
+        self.last_conv = Conv2D(filters=self.in_shape[-1], kernel_size=3, padding="same", name=f'{self.name}/last_conv',
                                 kernel_initializer='zero', bias_initializer='zero')
-        self.outputs = []  # avoid error when __call__()
-        logger.debug(f'init: {self.name}')
+
+        # ------------ monkey-patch -----------------
+        # (1) Avoid error in __call__()
+        self.outputs = []
+        # (2) Avoid Model.get_config() -> from_config() infinite loop (by pushing dummy node)
+        # Create the node linking internal inputs to internal outputs.
+        base_layer.Node(
+            outbound_layer=self,
+            inbound_layers=[],
+            node_indices=[],
+            tensor_indices=[],
+            input_tensors=[self.in_x],
+            output_tensors=self.outputs)
 
     def call(self, inputs, reverse=False, **kwargs):
         logger.debug(f'{self.name} call(): {inputs}')
@@ -220,7 +232,7 @@ class AffineCoupling(Network):  # FlowCoupling
         base_config = super(Network, self).get_config()  # Network.get_config() is not implemented
         config = {
             'name': base_config.get('name'),
-            'n_ch': self.n_ch,
+            'in_shape': self.in_shape,
             'hidden_channel_size': self.hidden_channel_size,
             'bit_per_sub_pixel_factor': self.bit_per_sub_pixel_factor,
         }
@@ -272,14 +284,26 @@ class Unsqueeze2d(Layer):
 
 
 class Split2d(Network):
-    def __init__(self, n_ch=None, bit_per_sub_pixel_factor=None, *args, **kwargs):
+    def __init__(self, in_shape=None, bit_per_sub_pixel_factor=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.n_ch = n_ch
+        self.in_shape = in_shape
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
-        self.conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
+        self.in_x = Input(shape=self.in_shape)
+        self.conv = Conv2D(filters=self.in_shape[-1], kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
-        self.outputs = []  # avoid error in __call__()
-        logger.debug(f'init: {self.name}')
+
+        # ------------ monkey-patch -----------------
+        # (1) Avoid error in __call__()
+        self.outputs = []
+        # (2) Avoid Model.get_config() -> from_config() infinite loop (by pushing dummy node)
+        # Create the node linking internal inputs to internal outputs.
+        base_layer.Node(
+            outbound_layer=self,
+            inbound_layers=[],
+            node_indices=[],
+            tensor_indices=[],
+            input_tensors=[self.in_x],
+            output_tensors=self.outputs)
 
     def call(self, inputs, reverse=False, **kwargs):
         if not reverse:
@@ -304,7 +328,7 @@ class Split2d(Network):
         base_config = super(Network, self).get_config()  # Network.get_config() is not implemented
         config = {
             'name': base_config.get('name'),
-            'n_ch': self.n_ch,
+            'in_shape': self.in_shape,
             'bit_per_sub_pixel_factor': self.bit_per_sub_pixel_factor,
         }
         return config
