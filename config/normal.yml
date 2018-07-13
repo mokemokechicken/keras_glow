@@ -1,0 +1,13 @@
+data:
+  image_width: 64
+  image_height: 64
+
+model:
+  n_levels: 4
+  n_depth: 16
+  hidden_channel_size: 256
+
+training:
+  batch_size: 8
+  epochs: 1000
+  steps_per_epoch: None
