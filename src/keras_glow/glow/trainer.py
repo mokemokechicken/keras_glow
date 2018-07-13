@@ -3,13 +3,11 @@ from logging import getLogger
 import numpy as np
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.callbacks import TensorBoard
-from tensorflow.python.keras.losses import mean_squared_error
 from tensorflow.python.keras.optimizers import Adam
 
 from keras_glow.config import Config
 from keras_glow.data.data_processor import DataProcessor
 from keras_glow.glow.model import GlowModel
-
 
 logger = getLogger(__name__)
 
@@ -21,6 +19,7 @@ class Trainer:
     def fit(self, model: GlowModel, dp: DataProcessor):
         tc = self.config.training
         self.compile(model)
+        steps_per_epoch = tc.steps_per_epoch or dp.image_count//tc.batch_size
 
         def generator_for_fit():
             while True:
@@ -32,8 +31,7 @@ class Trainer:
             TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
         ]
         model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
-                                    # steps_per_epoch=1,
-                                    steps_per_epoch=dp.image_count//tc.batch_size,
+                                    steps_per_epoch=steps_per_epoch,
                                     callbacks=callbacks, verbose=1)
 
     def compile(self, model: GlowModel):

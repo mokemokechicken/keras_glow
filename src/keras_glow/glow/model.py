@@ -8,6 +8,7 @@ from tensorflow.python.keras import backend as K
 from tensorflow.python.keras import initializers
 from tensorflow.python.keras.engine import Layer, Network
 from tensorflow.python.keras.layers import Lambda, Conv2D, Activation
+from tensorflow.python.keras.models import load_model
 
 from keras_glow.config import Config
 
@@ -25,6 +26,20 @@ class GlowModel:
     def build(self):
         self.encoder = self.build_encoder()
         self.decoder = self.build_decoder()
+
+    def save_all(self):
+        rc = self.config.resource
+        logger.info(f"saving encoder to {rc.encoder_path}")
+        self.encoder.save(rc.encoder_path)
+        logger.info(f"saving decoder to {rc.decoder_path}")
+        self.decoder.save(rc.decoder_path)
+
+    def load_all(self):
+        rc = self.config.resource
+        logger.info(f"loading encoder from {rc.encoder_path}")
+        self.encoder = load_model(rc.encoder_path)
+        logger.info(f"loading decoder from {rc.decoder_path}")
+        self.decoder = load_model(rc.decoder_path)
 
     def build_encoder(self):
         mc = self.config.model

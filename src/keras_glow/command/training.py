@@ -28,4 +28,4 @@ class TrainingCommand:
         trainer = Trainer(self.config)
         trainer.fit(model, dp)
 
-
+        model.save_all()

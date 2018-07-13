@@ -11,6 +11,7 @@ pyyaml = "*"
 pillow = "*"
 "beautifulsoup4" = "*"
 requests = "*"
+"h5py" = "*"
 
 [dev-packages]
 

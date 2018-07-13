@@ -34,6 +34,11 @@ class ResourceConfig(ConfigBase):
         # data
         self.data_dir = self.system_dir / 'data'
         self.image_dir = self.data_dir / 'image'
+        self.model_dir = self.data_dir / 'model'
+
+        # Model
+        self.encoder_path = self.model_dir / 'encoder.h5'
+        self.decoder_path = self.model_dir / 'decoder.h5'
 
         # Log
         self.log_dir = self.system_dir / "log"
@@ -41,7 +46,7 @@ class ResourceConfig(ConfigBase):
         self.main_log_path = self.log_dir / "main.log"
 
     def create_base_dirs(self):
-        dirs = [self.log_dir]
+        dirs = [self.log_dir, self.model_dir]
 
         for d in dirs:
             os.makedirs(d, exist_ok=True)
@@ -66,3 +71,4 @@ class TrainingConfig(ConfigBase):
         self.batch_size = 1
         self.lr = 0.001
         self.epochs = 10
+        self.steps_per_epoch = 1  # None means auto calculated
