@@ -1,15 +1,15 @@
 from logging import getLogger
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.keras.api.keras import constraints
 from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.engine import Layer, Network
-from tensorflow.python.keras.layers import Lambda, Dense, Conv2D, Activation, Add, Multiply
-from tensorflow.python.keras import initializers
-from tensorflow.python.keras import activations
 from tensorflow.python.keras import backend as K
+from tensorflow.python.keras import initializers
+from tensorflow.python.keras.engine import Layer, Network
+from tensorflow.python.keras.layers import Lambda, Conv2D, Activation
 
 from keras_glow.config import Config
-import numpy as np
 
 logger = getLogger(__name__)
 
@@ -34,12 +34,13 @@ class GlowModel:
         in_x = Input(shape=in_shape, name='image', dtype='uint8')
 
         # for loss to bits per sub pixel
-        self.bit_per_sub_pixel_factor = 1. / np.log(2.) * np.prod(in_shape)
+        self.bit_per_sub_pixel_factor = 1. / (np.log(2.) * np.prod(in_shape))
+        logger.debug(f'bit_per_sub_pixel_factor={self.bit_per_sub_pixel_factor}')
 
         # pre-process
-        out = Lambda(lambda x: x / mc.n_bins - 0.5)(in_x)
+        out = Lambda(lambda x: x / mc.n_bins - 0.5, name="pre-process")(in_x)
         # add noise
-        out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins))(out)
+        out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins), name="add_random_uniform")(out)
         # first squeeze
         out = Squeeze2d()(out)
 
@@ -80,7 +81,7 @@ class GlowModel:
 
         out = Unsqueeze2d()(out)
         # post-process
-        out = Lambda(lambda x: K.cast(K.clip(tf.floor((x + 0.5) * mc.n_bins), 0, 255), 'uint8'))(out)
+        out = Lambda(lambda x: K.cast(K.clip(tf.floor((x + 0.5) * mc.n_bins), 0, 255), 'uint8'), name='post-process')(out)
         decoder = Model(inputs=[z_in, temperature], outputs=[out])
         return decoder
 
@@ -196,7 +197,8 @@ class Invertible1x1Conv(Layer):
 
         # Sample a random orthogonal matrix:
         w_init = np.linalg.qr(np.random.randn(*w_shape))[0].astype('float32')
-        self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=initializers.constant(w_init))
+        self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=initializers.constant(w_init),
+                                             trainable=False)  # TODO: to be True
 
         # add log-det as loss
         log_det_factor = int(input_shape[1] * input_shape[2])

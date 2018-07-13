@@ -9,7 +9,7 @@ logger = getLogger(__name__)
 
 
 def start(config: Config):
-    logger.info("start")
+    logger.debug("start")
     TrainingCommand(config).start()
 
 

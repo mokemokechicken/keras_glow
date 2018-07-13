@@ -16,3 +16,7 @@ requests = "*"
 
 [requires]
 python_version = "3.6"
+
+[scripts]
+training = "python src/keras_glow/run.py training"
+tensorboard = "tensorboard --logdir log/tensorboard"

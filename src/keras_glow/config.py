@@ -49,20 +49,20 @@ class ResourceConfig(ConfigBase):
 
 class DataConfig(ConfigBase):
     def __init__(self):
-        self.image_width = 16
-        self.image_height = 16
+        self.image_width = 32
+        self.image_height = 32
 
 
 class ModelConfig(ConfigBase):
     def __init__(self):
         self.n_bins = 256
-        self.n_levels = 2  # 4
-        self.n_depth = 2   # 32
+        self.n_levels = 1  # 4
+        self.n_depth = 1   # 32
         self.hidden_channel_size = 16  # 512
 
 
 class TrainingConfig(ConfigBase):
     def __init__(self):
-        self.batch_size = 4
+        self.batch_size = 1
         self.lr = 0.001
         self.epochs = 10

@@ -13,13 +13,16 @@ logger = getLogger(__name__)
 
 def create_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", help="specify config file")
-    parser.add_argument("--log-level", help="specify Log Level(debug/info/warning/error): default=info",
-                        choices=['debug', 'info', 'warning', 'error'])
-    sub = parser.add_subparsers()
 
+    def add_common_options(p):
+        p.add_argument("--config", help="specify config file")
+        p.add_argument("--log-level", help="specify Log Level(debug/info/warning/error): default=info",
+                       choices=['debug', 'info', 'warning', 'error'])
+
+    sub = parser.add_subparsers()
     parser_training = sub.add_parser("training")
     parser_training.set_defaults(command='training')
+    add_common_options(parser_training)
     return parser
 
 
@@ -47,4 +50,4 @@ def start():
         parser.print_help()
         raise RuntimeError(f"unknown command")
 
-    logger.info(f"Finish: {args}")
+    logger.debug(f"Finish: {args}")
