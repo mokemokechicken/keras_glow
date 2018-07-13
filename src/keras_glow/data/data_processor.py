@@ -7,7 +7,7 @@ from PIL.Image import BILINEAR
 from keras_glow.config import Config
 
 
-class DataProcess:
+class DataProcessor:
     def __init__(self, config: Config):
         self.config = config
         self._image_files = None

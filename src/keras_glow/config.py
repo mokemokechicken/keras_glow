@@ -64,3 +64,5 @@ class ModelConfig(ConfigBase):
 class TrainingConfig(ConfigBase):
     def __init__(self):
         self.batch_size = 4
+        self.lr = 0.001
+        self.epochs = 10

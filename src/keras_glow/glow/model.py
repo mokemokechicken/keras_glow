@@ -64,9 +64,10 @@ class GlowModel:
         return out
 
     def build_decoder(self, z_shape=None):
+        mc = self.config.model
         z_shape = z_shape or K.int_shape(self.encoder.output)[1:]
 
-        mc = self.config.model
+        # Placeholder
         z_in = Input(shape=z_shape, name="z_in")
         temperature = Input(shape=(1, ), name="temperature")
 
