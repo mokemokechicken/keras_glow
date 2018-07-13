@@ -34,15 +34,14 @@ class GlowModel:
         in_x = Input(shape=in_shape, name='image', dtype='uint8')
 
         # for loss to bits per sub pixel
-        self.bit_per_sub_pixel_factor = 1. / (np.log(2.) * np.prod(in_shape))
+        # self.bit_per_sub_pixel_factor = 1. / (np.log(2.) * np.prod(in_shape))  # TODO: fix back
+        self.bit_per_sub_pixel_factor = 1
         logger.debug(f'bit_per_sub_pixel_factor={self.bit_per_sub_pixel_factor}')
 
         # pre-process
         out = Lambda(lambda x: x / mc.n_bins - 0.5, name="pre-process")(in_x)
-        # add noise
-        out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins), name="add_random_uniform")(out)
-        # first squeeze
-        out = Squeeze2d()(out)
+        # add noise TODO: fix back
+        #  out = Lambda(lambda x: x+tf.random_uniform(tf.shape(x), 0, 1. / mc.n_bins), name="add_random_uniform")(out)
 
         # encoder_loop
         encoder_loop_out = self.build_encoder_loop(out)
@@ -50,16 +49,17 @@ class GlowModel:
 
         # add prior loss
         prior = GaussianDiag.prior(K.shape(encoder_loop_out))
-        encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)
+        # encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)  #  TODO: fix back
 
         # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
-        encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
+        # encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)  # TODO: fix back
         return encoder
 
     def build_encoder_loop(self, out):
         mc = self.config.model
         for level_idx in range(mc.n_levels):
-            out = self.revnet2d(out, level_idx)
+            out = Squeeze2d()(out)
+            out = self.revnet2d(out, level_idx)  # 'step of flow' in the paper
             if level_idx < mc.n_levels - 1:
                 out = self.split2d(out, level_idx)
         return out
@@ -78,8 +78,7 @@ class GlowModel:
             if level_idx < mc.n_levels - 1:
                 out = self.split2d_reverse(out, temperature, level_idx)
             out = self.revnet2d(out, level_idx, reverse=True)
-
-        out = Unsqueeze2d()(out)
+            out = Unsqueeze2d()(out)
         # post-process
         out = Lambda(lambda x: K.cast(K.clip(tf.floor((x + 0.5) * mc.n_bins), 0, 255), 'uint8'), name='post-process')(out)
         decoder = Model(inputs=[z_in, temperature], outputs=[out])
@@ -168,8 +167,9 @@ class ActNorm(Layer):
         if self.use_loss:
             # Log-Determinant
             # it seems that this is required only for encoding.
-            self.add_loss(-1 * log_det_factor * K.sum(self.log_scale) * self.bit_per_sub_pixel_factor)
+            #  self.add_loss(-1 * log_det_factor * K.sum(self.log_scale) * self.bit_per_sub_pixel_factor)  TODO: fix back
             # K.sum(self.log_scale) or K.sum(K.abs(self.log_scale)) ???
+            pass
 
         # final
         super().build(input_shape)
@@ -203,7 +203,7 @@ class Invertible1x1Conv(Layer):
         # add log-det as loss
         log_det_factor = int(input_shape[1] * input_shape[2])
         log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
-        self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)
+        #  self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)  # TODO: fix back
 
         # final
         super().build(input_shape)
@@ -242,7 +242,7 @@ class AffineCoupling(Network):  # FlowCoupling
         scale = K.exp(scale)  # K.sigmoid(x + 2)  ??
         if not reverse:
             z2 = (z2 + shift) * scale
-            self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]) * self.bit_per_sub_pixel_factor)
+            #  self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]) * self.bit_per_sub_pixel_factor)  TODO: fix back
         else:
             z2 = z2 / scale - shift
         out = K.concatenate([z1, z2], axis=3)
@@ -316,10 +316,12 @@ class Split2d(Network):
             # split2d_prior(z)
             h = self.conv(z1)  # (w, h, n_ch)
             pz = GaussianDiag(h)  # (w, h, n_ch//2)
-            out = Squeeze2d()(z1)  # (w//2, h//2, n_ch*2)
-            self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)
+            # out = Squeeze2d()(z1)  # (w//2, h//2, n_ch*2)  move to encoder_loop() for corresponding to the paper
+            # self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)  # TODO: fix back
+            out = z1
         else:
-            z1 = Unsqueeze2d()(inputs)  # (w, h, n_ch//2)
+            # z1 = Unsqueeze2d()(inputs)  # (w, h, n_ch//2)  # move to decoder_loop() for corresponding to the paper
+            z1 = inputs
             h = self.conv(z1)  # (w, h, n_ch)
             pz = GaussianDiag(h)  # (w, h, n_ch//2)
             z2 = pz.sample2(pz.eps * K.reshape(temperature, [-1, 1, 1, 1]))
