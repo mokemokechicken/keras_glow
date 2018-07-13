@@ -90,21 +90,13 @@ class GlowModel:
         out = z_in
         for level_idx in reversed(range(mc.n_levels)):
             if level_idx < mc.n_levels - 1:
-                out = self.split2d_reverse(out, temperature, level_idx)
+                out = self.split2d(out, level_idx, reverse=True, temperature=temperature)
             out = self.revnet2d(out, level_idx, reverse=True)
             out = Unsqueeze2d()(out)
         # post-process
         out = Lambda(lambda x: K.cast(K.clip(tf.floor((x + 0.5) * mc.n_bins), 0, 255), 'uint8'), name='post-process')(out)
         decoder = Model(inputs=[z_in, temperature], outputs=[out])
         return decoder
-
-    def split2d_reverse(self, out, temperature, level_idx):
-        layer_key = f'li-{level_idx}'
-        split_2d = self.get_layer(Split2d, layer_key,
-                                  n_ch=K.int_shape(out)[-1],
-                                  bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
-        out = split_2d(out, reverse=True, temperature=temperature)
-        return out
 
     def revnet2d(self, out, level_idx, reverse=False):
         for depth_idx in range(self.config.model.n_depth):
@@ -137,12 +129,12 @@ class GlowModel:
             out = act_norm(out, reverse=True)
         return out
 
-    def split2d(self, out, level_idx):
+    def split2d(self, out, level_idx, reverse=False, temperature=None):
         layer_key = f'li-{level_idx}'
         split_2d = self.get_layer(Split2d, layer_key,
-                                  n_ch=K.int_shape(out)[-1],
+                                  in_shape=K.int_shape(out),
                                   bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
-        out = split_2d(out)
+        out = split_2d(out, reverse=reverse, temperature=temperature)
         return out
 
     def get_layer(self, kls, layer_key, **kwargs):
@@ -233,6 +225,7 @@ class Invertible1x1Conv(Layer):
 class AffineCoupling(Network):  # FlowCoupling
     def __init__(self, n_ch, hidden_channel_size, bit_per_sub_pixel_factor, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.n_ch = n_ch
         self.hidden_channel_size = hidden_channel_size
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
         self.conv1 = Conv2D(filters=self.hidden_channel_size,
@@ -273,6 +266,19 @@ class AffineCoupling(Network):  # FlowCoupling
 
         out = self.last_conv(out)
         return out
+
+    def get_config(self):
+        config = {
+            'n_ch': self.n_ch,
+            'hidden_channel_size': self.hidden_channel_size,
+            'bit_per_sub_pixel_factor': self.bit_per_sub_pixel_factor,
+        }
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class Squeeze2d(Layer):
@@ -317,6 +323,7 @@ class Unsqueeze2d(Layer):
 class Split2d(Network):
     def __init__(self, n_ch, bit_per_sub_pixel_factor, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.n_ch = n_ch
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
         self.conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
@@ -340,6 +347,18 @@ class Split2d(Network):
             z2 = pz.sample2(pz.eps * K.reshape(temperature, [-1, 1, 1, 1]))
             out = K.concatenate([z1, z2], axis=3)
         return out
+
+    def get_config(self):
+        config = {
+            'n_ch': self.n_ch,
+            'bit_per_sub_pixel_factor': self.bit_per_sub_pixel_factor,
+        }
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class GaussianDiag:
