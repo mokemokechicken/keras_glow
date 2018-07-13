@@ -23,6 +23,9 @@ class TrainingCommand:
         #     print(y.shape)
 
         model = GlowModel(self.config)
+
+        model.load_all()
+
         model.build()
 
         trainer = Trainer(self.config)
