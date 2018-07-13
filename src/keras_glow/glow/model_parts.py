@@ -1,3 +1,5 @@
+from logging import getLogger
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.keras import backend as K, initializers
@@ -5,10 +7,13 @@ from tensorflow.python.keras.engine import Layer, Network
 from tensorflow.python.keras.layers import Conv2D, Activation
 
 
+logger = getLogger(__name__)
+
+
 class PreProcess(Layer):
     """for easy to serialization"""
 
-    def __init__(self, n_bins, *args, **kwargs):
+    def __init__(self, n_bins=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.n_bins = n_bins
 
@@ -18,11 +23,19 @@ class PreProcess(Layer):
     def call(self, inputs, **kwargs):
         return K.cast(inputs, 'float32') / self.n_bins - 0.5
 
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            'n_bins': self.n_bins,
+        }
+        config.update(base_config)
+        return config
+
 
 class PostProcess(Layer):
     """for easy to serialization"""
 
-    def __init__(self, n_bins, *args, **kwargs):
+    def __init__(self, n_bins=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.n_bins = n_bins
 
@@ -32,9 +45,17 @@ class PostProcess(Layer):
     def call(self, inputs, **kwargs):
         return K.cast(K.clip(tf.floor((inputs + 0.5) * self.n_bins), 0, 255), 'uint8')
 
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            'n_bins': self.n_bins,
+        }
+        config.update(base_config)
+        return config
+
 
 class AddRandomUniform(Layer):
-    def __init__(self, n_bins, *args, **kwargs):
+    def __init__(self, n_bins=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.n_bins = n_bins
 
@@ -44,12 +65,20 @@ class AddRandomUniform(Layer):
     def call(self, inputs, **kwargs):
         return inputs+tf.random_uniform(tf.shape(inputs), 0, 1. / self.n_bins)
 
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            'n_bins': self.n_bins,
+        }
+        config.update(base_config)
+        return config
+
 
 class ActNorm(Layer):
     log_scale = None
     bias = None
 
-    def __init__(self, bit_per_sub_pixel_factor=1, use_loss=True, *args, **kwargs):
+    def __init__(self, bit_per_sub_pixel_factor=None, use_loss=True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.use_loss = use_loss
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
@@ -88,6 +117,14 @@ class ActNorm(Layer):
         else:
             return x / K.exp(self.log_scale) - self.bias
 
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            'bit_per_sub_pixel_factor': self.bit_per_sub_pixel_factor,
+        }
+        config.update(base_config)
+        return config
+
 
 class Invertible1x1Conv(Layer):
     rotate_matrix = None  # type: tf.Variable
@@ -123,6 +160,14 @@ class Invertible1x1Conv(Layer):
         z = tf.nn.conv2d(inputs, w, [1, 1, 1, 1], 'SAME', data_format='NHWC')
         return z
 
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            'bit_per_sub_pixel_factor': self.bit_per_sub_pixel_factor,
+        }
+        config.update(base_config)
+        return config
+
 
 class AffineCoupling(Network):  # FlowCoupling
     def __init__(self, n_ch=None, hidden_channel_size=None, bit_per_sub_pixel_factor=None, *args, **kwargs):
@@ -130,17 +175,18 @@ class AffineCoupling(Network):  # FlowCoupling
         self.n_ch = n_ch
         self.hidden_channel_size = hidden_channel_size
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
-        self.conv1 = Conv2D(filters=self.hidden_channel_size,
+        self.conv1 = Conv2D(filters=self.hidden_channel_size, name=f'{self.name}/conv1',
                             kernel_size=3, strides=1, padding="same", use_bias=False)
-        self.actnorm1 = ActNorm(use_loss=False)
+        self.actnorm1 = ActNorm(use_loss=False, name=f'{self.name}/actnorm1')
 
-        self.conv2 = Conv2D(filters=self.hidden_channel_size,
+        self.conv2 = Conv2D(filters=self.hidden_channel_size, name=f'{self.name}/conv2',
                             kernel_size=1, strides=1, padding="same", use_bias=False)
-        self.actnorm2 = ActNorm(use_loss=False)
+        self.actnorm2 = ActNorm(use_loss=False, name=f'{self.name}/actnorm2')
 
-        self.last_conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
+        self.last_conv = Conv2D(filters=n_ch, kernel_size=3, padding="same", name=f'{self.name}/last_conv',
                                 kernel_initializer='zero', bias_initializer='zero')
         self.outputs = []  # avoid error when __call__()
+        logger.debug(f'init: {self.name}')
 
     def call(self, inputs, reverse=False, **kwargs):
         z = inputs
@@ -181,6 +227,7 @@ class AffineCoupling(Network):  # FlowCoupling
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
+        logger.debug(f'called={config}, custom={custom_objects}')
         return cls(**config)
 
 
@@ -231,6 +278,7 @@ class Split2d(Network):
         self.conv = Conv2D(filters=n_ch, kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
         self.outputs = []  # avoid error in __call__()
+        logger.debug(f'init: {self.name}')
 
     def call(self, inputs, reverse=False, temperature=None, **kwargs):
         if not reverse:
@@ -262,6 +310,7 @@ class Split2d(Network):
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
+        logger.debug(f'called={config}, custom={custom_objects}')
         return cls(**config)
 
 

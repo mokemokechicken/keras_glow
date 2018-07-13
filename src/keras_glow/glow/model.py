@@ -70,7 +70,7 @@ class GlowModel:
 
         # encoder_loop
         encoder_loop_out = self.build_encoder_loop(out)
-        encoder = Model(inputs=in_x, outputs=encoder_loop_out)
+        encoder = Model(inputs=in_x, outputs=encoder_loop_out, name="encoder")
 
         # add prior loss
         prior = GaussianDiag.prior(K.shape(encoder_loop_out))
@@ -83,7 +83,7 @@ class GlowModel:
     def build_encoder_loop(self, out):
         mc = self.config.model
         for level_idx in range(mc.n_levels):
-            out = Squeeze2d()(out)
+            out = Squeeze2d(name=f'Squeeze2d/li-{level_idx}')(out)
             out = self.revnet2d(out, level_idx)  # 'step of flow' in the paper
             if level_idx < mc.n_levels - 1:
                 out = self.split2d(out, level_idx)
@@ -104,10 +104,10 @@ class GlowModel:
             if level_idx < mc.n_levels - 1:
                 out = self.split2d(out, level_idx, reverse=True, temperature=temperature)
             out = self.revnet2d(out, level_idx, reverse=True)
-            out = Unsqueeze2d()(out)
+            out = Unsqueeze2d(name=f'Unsqueeze2d/li-{level_idx}')(out)
         # post-process
         out = PostProcess(n_bins=mc.n_bins, name='post-process')(out)
-        decoder = Model(inputs=[z_in, temperature], outputs=[out])
+        decoder = Model(inputs=[z_in, temperature], outputs=[out], name='decoder')
         return decoder
 
     def revnet2d(self, out, level_idx, reverse=False):
