@@ -5,4 +5,5 @@ __pycache__
 .env
 log/
 data/image/
+*.png
 *.h5

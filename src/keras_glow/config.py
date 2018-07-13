@@ -76,3 +76,5 @@ class TrainingConfig(ConfigBase):
         self.lr = 0.001
         self.epochs = 10
         self.steps_per_epoch = 1  # None means auto calculated
+        self.sample_every_n_epoch = 5
+        self.sample_n_image = 10
