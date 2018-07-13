@@ -1,1 +1,1 @@
-rsync --exclude data/image --exclude data/model --exclude log/ --exclude data/sample --exclude .git -ruv ./ ml:/home/data_lab/keras_glow/
+rsync --exclude '.idea/' --exclude '*.pyc' --exclude data/image --exclude data/model --exclude log/ --exclude data/sample --exclude .git -ruv ./ ml:/home/data_lab/keras_glow/

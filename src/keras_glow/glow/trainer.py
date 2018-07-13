@@ -1,14 +1,17 @@
 from logging import getLogger
 
 import numpy as np
+from tensorflow.python.framework.errors_impl import InvalidArgumentError
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.callbacks import TensorBoard, Callback, ReduceLROnPlateau
+from tensorflow.python.keras.engine import Layer
 from tensorflow.python.keras.optimizers import Adam
 
 from keras_glow.config import Config
 from keras_glow.data.data_processor import DataProcessor
 from keras_glow.glow.agent import Agent
 from keras_glow.glow.model import GlowModel
+from keras_glow.glow.model_parts import Invertible1x1Conv
 
 logger = getLogger(__name__)
 
@@ -19,6 +22,7 @@ class Trainer:
 
     def fit(self, model: GlowModel, dp: DataProcessor):
         tc = self.config.training
+        model.dump_model_internal()
         self.compile(model)
         steps_per_epoch = tc.steps_per_epoch or dp.image_count//tc.batch_size
 
@@ -35,9 +39,13 @@ class Trainer:
                         ),
             ReduceLROnPlateau(monitor='loss', factor=tc.lr_decay, patience=tc.lr_patience, verbose=1),
         ]
-        model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
-                                    steps_per_epoch=steps_per_epoch,
-                                    callbacks=callbacks, verbose=1)
+        try:
+            model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
+                                        steps_per_epoch=steps_per_epoch,
+                                        callbacks=callbacks, verbose=1)
+        except InvalidArgumentError as e:
+            model.dump_model_internal()
+            raise e
 
     def compile(self, model: GlowModel):
         tc = self.config.training
@@ -69,6 +77,9 @@ class SamplingCallback(Callback):
     def save_model(self):
         self.glow_model.save_all()
 
+    def on_batch_end(self, batch, logs=None):
+        if batch % 10 == 0:
+            self.glow_model.dump_model_internal()
 
 def zero_loss(y_true, y_pred):
     return K.constant(0., dtype='float32')

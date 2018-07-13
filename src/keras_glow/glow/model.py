@@ -166,3 +166,11 @@ class GlowModel:
         if self.decoder is not None:
             return K.int_shape(self.decoder.input[0])[1:]
         return None
+
+    def dump_model_internal(self):
+        logger.debug(f'determinant')
+        dets = []
+        for layer in self.encoder.layers:
+            if isinstance(layer, Invertible1x1Conv):
+                dets.append(f'{layer.get_determinant():.3f}')
+        logger.debug(f'{",".join(dets)}')

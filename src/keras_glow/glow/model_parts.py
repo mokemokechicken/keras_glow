@@ -128,6 +128,7 @@ class ActNorm(Layer):
 
 class Invertible1x1Conv(Layer):
     rotate_matrix = None  # type: tf.Variable
+    determinant = None  # type: tf.Variable
 
     def __init__(self, bit_per_sub_pixel_factor=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -143,14 +144,17 @@ class Invertible1x1Conv(Layer):
         w_init = np.linalg.qr(np.random.randn(*w_shape))[0].astype('float32')
         self.rotate_matrix = self.add_weight("rotate_matrix", w_shape, initializer=initializers.constant(w_init),
                                              trainable=True)
+        # debug
+        self.determinant = K.variable(value=np.linalg.det(w_init), name='determinant')
 
         # add log-det as loss
         log_det_factor = int(input_shape[1] * input_shape[2])
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)) + K.epsilon())
-        log_det = tf.log(tf.clip_by_value(tf.matrix_determinant(self.rotate_matrix), 0.001, 1000))
+        log_det = tf.log(tf.clip_by_value(tf.abs(tf.matrix_determinant(self.rotate_matrix)), 0.001, 1000))
         self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)
 
+        self.add_update([K.update(self.determinant, tf.matrix_determinant(self.rotate_matrix))])
         # final
         super().build(input_shape)
 
@@ -169,6 +173,9 @@ class Invertible1x1Conv(Layer):
         }
         config.update(base_config)
         return config
+
+    def get_determinant(self):
+        return K.get_value(self.determinant)
 
 
 class AffineCoupling(Network):  # FlowCoupling
