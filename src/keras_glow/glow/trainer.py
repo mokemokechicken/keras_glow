@@ -29,8 +29,8 @@ class Trainer:
                     yield (img, np.zeros((img.shape[0], )))
 
         callbacks = [
-            TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
             SamplingCallback(self.config, model),
+            TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True),
         ]
         model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
                                     steps_per_epoch=steps_per_epoch,
@@ -48,11 +48,14 @@ class SamplingCallback(Callback):
         super().__init__()
 
     def on_epoch_end(self, epoch, logs=None):
+        logger.debug(f"logs={logs}")
         sample_n_epoch = self.config.training.sample_every_n_epoch
         if not sample_n_epoch:
             return
         if epoch % sample_n_epoch == 0:
             self.sample_image(epoch)
+        if logs and 'loss' in logs:
+            logs['loss'] = np.sum(logs['loss'])
 
     def sample_image(self, epoch):
         agent = Agent(self.config, self.glow_model)

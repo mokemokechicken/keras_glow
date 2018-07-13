@@ -73,7 +73,7 @@ class ModelConfig(ConfigBase):
 class TrainingConfig(ConfigBase):
     def __init__(self):
         self.batch_size = 1
-        self.lr = 0.001
+        self.lr = 0.0001
         self.epochs = 10
         self.steps_per_epoch = 1  # None means auto calculated
         self.sample_every_n_epoch = 5
