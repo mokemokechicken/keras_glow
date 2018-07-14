@@ -19,7 +19,6 @@ logger = getLogger(__name__)
 class GlowModel:
     def __init__(self, config: Config):
         self.config = config
-        self._layers = {}
         self.encoder = None  # type: Model
         self.decoder = None  # type: Model
         self.bit_per_sub_pixel_factor = None  # type: float
@@ -34,9 +33,9 @@ class GlowModel:
             logger.info(f"saving encoder to {rc.encoder_path}")
             # include_optimizer=True makes error when deep network...(h5 problem)
             self.encoder.save(rc.encoder_path, include_optimizer=False)
-        if self.decoder is not None:
-            logger.info(f"saving decoder to {rc.decoder_path}")
-            self.decoder.save(rc.decoder_path, include_optimizer=False)
+        # if self.decoder is not None:
+        #     logger.info(f"saving decoder to {rc.decoder_path}")
+        #     self.decoder.save(rc.decoder_path, include_optimizer=False)
 
     def load_all(self):
         rc = self.config.resource
@@ -51,12 +50,13 @@ class GlowModel:
             Unsqueeze2d=Unsqueeze2d,
             Split2d=Split2d,
         )
-        if rc.encoder_path.exists():
-            logger.info(f"loading encoder from {rc.encoder_path}")
-            self.encoder = load_model(rc.encoder_path, custom_objects=custom_objects, compile=False)
-        if rc.decoder_path.exists():
-            logger.info(f"loading decoder from {rc.decoder_path}")
-            self.decoder = load_model(rc.decoder_path, custom_objects=custom_objects, compile=False)
+
+        logger.info(f"loading encoder from {rc.encoder_path}")
+        self.encoder = load_model(rc.encoder_path, custom_objects=custom_objects, compile=False)
+        self.decoder = self.build_decoder()
+        # if rc.decoder_path.exists():
+        #     logger.info(f"loading decoder from {rc.decoder_path}")
+        #     self.decoder = load_model(rc.decoder_path, custom_objects=custom_objects, compile=False)
 
     def build_encoder(self):
         mc = self.config.model
@@ -97,6 +97,7 @@ class GlowModel:
         return out
 
     def build_decoder(self, z_shape=None):
+        assert self.encoder is not None
         mc = self.config.model
         z_shape = z_shape or K.int_shape(self.encoder.output)[1:]
 
@@ -159,9 +160,19 @@ class GlowModel:
         return out
 
     def get_layer(self, kls, layer_key, **kwargs):
-        if (kls, layer_key) not in self._layers:
-            self._layers[(kls, layer_key)] = kls(name=f'{kls.__name__}/{layer_key}', **kwargs)
-        return self._layers.get((kls, layer_key))
+        layer_name = f'{kls.__name__}/{layer_key}'
+
+        def find_layer(network: Network, name):
+            if network is not None:
+                for l in network.layers:
+                    if l.name == name:
+                        logger.debug(f'found layer: {name}')
+                        return l
+
+        layer = find_layer(self.encoder, layer_name)
+        if layer is None:
+            layer = kls(name=layer_name, **kwargs)
+        return layer
 
     @property
     def decoder_input_shape(self):

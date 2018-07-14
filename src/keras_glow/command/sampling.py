@@ -20,7 +20,5 @@ class SamplingCommand:
         model = GlowModel(self.config)
         model.load_all()
 
-        model.encoder.get_layer()
-
-        #agent = Agent(self.config, model)
-        #agent.sample_to_save(n=10)
+        agent = Agent(self.config, model)
+        agent.sample_to_save(n=10)

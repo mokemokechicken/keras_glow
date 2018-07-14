@@ -39,7 +39,7 @@ class ResourceConfig(ConfigBase):
 
         # Model
         self.encoder_path = self.model_dir / 'encoder.h5'
-        self.decoder_path = self.model_dir / 'decoder.h5'
+        # self.decoder_path = self.model_dir / 'decoder.h5'
 
         # Sample
         self.sample_image_base = self.sample_dir / 'img'
