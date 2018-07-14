@@ -352,6 +352,26 @@ class Split2d(Network):
         return cls(**config)
 
 
+class JustForAddLoss(Layer):
+    def __init__(self, constant_loss=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.constant_loss = constant_loss
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    def build(self, input_shape):
+        self.add_loss(self.constant_loss)
+
+    def get_config(self):
+        base_config = super().get_config()
+        config = {
+            'constant_loss': self.constant_loss,
+        }
+        config.update(base_config)
+        return config
+
+
 class GaussianDiag:
     def __init__(self, tensor):
         self.mean, self.logsd = split_channels(tensor)

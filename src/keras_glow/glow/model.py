@@ -11,7 +11,7 @@ from tensorflow.python.layers.core import Dense
 
 from keras_glow.config import Config
 from keras_glow.glow.model_parts import ActNorm, Invertible1x1Conv, AffineCoupling, Squeeze2d, Unsqueeze2d, Split2d, \
-    GaussianDiag, PreProcess, AddRandomUniform, PostProcess
+    GaussianDiag, PreProcess, AddRandomUniform, PostProcess, JustForAddLoss
 
 logger = getLogger(__name__)
 
@@ -21,7 +21,6 @@ class GlowModel:
         self.config = config
         self.encoder = None  # type: Model
         self.decoder = None  # type: Model
-        self.bit_per_sub_pixel_factor = None  # type: float
 
     def build(self):
         self.encoder = self.build_encoder()
@@ -49,6 +48,7 @@ class GlowModel:
             Squeeze2d=Squeeze2d,
             Unsqueeze2d=Unsqueeze2d,
             Split2d=Split2d,
+            JustForAddLoss=JustForAddLoss,
         )
 
         logger.info(f"loading encoder from {rc.encoder_path}")
@@ -63,14 +63,17 @@ class GlowModel:
         dc = self.config.data
         logger.info(mc)
         in_shape = (dc.image_height, dc.image_width, 3)
-        in_x = Input(shape=in_shape, name='image', dtype='uint8')
+        out = in_x = Input(shape=in_shape, name='image', dtype='uint8')
 
         # for loss to bits per sub pixel
-        self.bit_per_sub_pixel_factor = 1. / (np.log(2.) * np.prod(in_shape))
         logger.debug(f'bit_per_sub_pixel_factor={self.bit_per_sub_pixel_factor}')
 
+        # add constant loss (maybe meaningless for training)
+        # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
+        out = JustForAddLoss(constant_loss=np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)(out)
+
         # pre-process
-        out = PreProcess(n_bins=mc.n_bins, name="pre-process")(in_x)
+        out = PreProcess(n_bins=mc.n_bins, name="pre-process")(out)
         # add noise
         out = AddRandomUniform(n_bins=mc.n_bins, name='add_random_uniform')(out)
 
@@ -78,14 +81,16 @@ class GlowModel:
         encoder_loop_out = self.build_encoder_loop(out)
         encoder = Model(inputs=in_x, outputs=encoder_loop_out, name="encoder")
 
-        # add prior loss
-        prior = GaussianDiag.prior(K.shape(encoder_loop_out))
-        encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)
-
-        # add constant loss (maybe meaningless for training)
-        # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
-        encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
+        # add prior loss: -> move to trainer.create_prior_loss()
+        # prior = GaussianDiag.prior(K.shape(encoder_loop_out))
+        # encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)
         return encoder
+
+    @property
+    def bit_per_sub_pixel_factor(self):
+        dc = self.config.data
+        in_shape = (dc.image_height, dc.image_width, 3)
+        return 1. / (np.log(2.) * np.prod(in_shape))
 
     def build_encoder_loop(self, out):
         mc = self.config.model

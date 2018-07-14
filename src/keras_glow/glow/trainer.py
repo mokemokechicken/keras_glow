@@ -11,7 +11,7 @@ from keras_glow.config import Config
 from keras_glow.data.data_processor import DataProcessor
 from keras_glow.glow.agent import Agent
 from keras_glow.glow.model import GlowModel
-from keras_glow.glow.model_parts import Invertible1x1Conv
+from keras_glow.glow.model_parts import Invertible1x1Conv, GaussianDiag
 
 logger = getLogger(__name__)
 
@@ -49,7 +49,7 @@ class Trainer:
 
     def compile(self, model: GlowModel):
         tc = self.config.training
-        model.encoder.compile(optimizer=Adam(lr=tc.lr), loss=zero_loss)
+        model.encoder.compile(optimizer=Adam(lr=tc.lr), loss=create_prior_loss(model.bit_per_sub_pixel_factor))
 
 
 class SamplingCallback(Callback):
@@ -75,11 +75,17 @@ class SamplingCallback(Callback):
         agent.sample_to_save(self.config.training.sample_n_image, image_path_base=image_path_base)
 
     def save_model(self):
+        print("")
         self.glow_model.save_all()
+        print("")
 
     def on_batch_end(self, batch, logs=None):
         if batch % 1 == 0:
             self.glow_model.dump_model_internal()
 
-def zero_loss(y_true, y_pred):
-    return K.constant(0., dtype='float32')
+
+def create_prior_loss(bit_per_sub_pixel_factor):
+    def prior_loss(y_true, y_pred):
+        prior = GaussianDiag.prior(K.shape(y_pred))
+        return -prior.logp(y_pred) * bit_per_sub_pixel_factor
+    return prior_loss
