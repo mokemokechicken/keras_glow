@@ -78,7 +78,7 @@ class SamplingCallback(Callback):
         self.glow_model.save_all()
 
     def on_batch_end(self, batch, logs=None):
-        if batch % 10 == 0:
+        if batch % 1 == 0:
             self.glow_model.dump_model_internal()
 
 def zero_loss(y_true, y_pred):

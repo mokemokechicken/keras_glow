@@ -125,6 +125,9 @@ class ActNorm(Layer):
         config.update(base_config)
         return config
 
+    def get_log_scale(self):
+        return K.get_value(self.log_scale)
+
 
 class Invertible1x1Conv(Layer):
     rotate_matrix = None  # type: tf.Variable
@@ -184,7 +187,6 @@ class AffineCoupling(Network):  # FlowCoupling
         self.in_shape = in_shape
         self.hidden_channel_size = hidden_channel_size
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
-        self.in_x = Input(shape=self.in_shape)
         self.conv1 = Conv2D(filters=self.hidden_channel_size, name=f'{self.name}/conv1',
                             kernel_size=3, strides=1, padding="same", use_bias=False)
         self.actnorm1 = ActNorm(use_loss=False, name=f'{self.name}/actnorm1')
@@ -201,6 +203,7 @@ class AffineCoupling(Network):  # FlowCoupling
         self.outputs = []
         # (2) Avoid Model.get_config() -> from_config() infinite loop (by pushing dummy node)
         # Create the node linking internal inputs to internal outputs.
+        self.in_x = Input(shape=self.in_shape)
         base_layer.Node(
             outbound_layer=self,
             inbound_layers=[],
@@ -251,6 +254,9 @@ class AffineCoupling(Network):  # FlowCoupling
         logger.debug(f'called={config}, custom={custom_objects}')
         return cls(**config)
 
+    def get_last_scale(self):
+        return np.max(K.get_value(self.last_scale))
+
 
 class Squeeze2d(Layer):
     factor = 2
@@ -296,7 +302,6 @@ class Split2d(Network):
         super().__init__(*args, **kwargs)
         self.in_shape = in_shape
         self.bit_per_sub_pixel_factor = bit_per_sub_pixel_factor
-        self.in_x = Input(shape=self.in_shape)
         self.conv = Conv2D(filters=self.in_shape[-1], kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
 
@@ -305,6 +310,7 @@ class Split2d(Network):
         self.outputs = []
         # (2) Avoid Model.get_config() -> from_config() infinite loop (by pushing dummy node)
         # Create the node linking internal inputs to internal outputs.
+        self.in_x = Input(shape=self.in_shape)
         base_layer.Node(
             outbound_layer=self,
             inbound_layers=[],

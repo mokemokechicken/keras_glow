@@ -168,9 +168,28 @@ class GlowModel:
         return None
 
     def dump_model_internal(self):
-        logger.debug(f'determinant')
-        dets = []
-        for layer in self.encoder.layers:
-            if isinstance(layer, Invertible1x1Conv):
-                dets.append(f'{layer.get_determinant():.3f}')
-        logger.debug(f'{",".join(dets)}')
+        def det():
+            logger.debug(f'determinant')
+            dets = []
+            for layer in self.encoder.layers:
+                if isinstance(layer, Invertible1x1Conv):
+                    dets.append(f'{layer.get_determinant():.3f}')
+            logger.debug(f'{",".join(dets)}')
+
+        def actnorm():
+            logger.debug("act norm")
+            values = []
+            for layer in self.encoder.layers:
+                if isinstance(layer, ActNorm):
+                    ls = layer.get_log_scale()
+                    values.append(f'(min={np.min(ls)} mean={np.mean(ls)} max={np.max(ls)})')
+            logger.debug(",".join(values))
+
+        def affine_coupling():
+            logger.debug('affine_coupling')
+            values = []
+            for layer in [x for x in self.encoder.layers if isinstance(x, AffineCoupling)]:
+                values.append(f'{layer.get_last_scale():.3f}')
+            logger.debug(",".join(values))
+
+        affine_coupling()
