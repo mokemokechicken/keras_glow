@@ -22,6 +22,7 @@ def create_parser():
 
     sub_parser = sub.add_parser("training")
     sub_parser.set_defaults(command='training')
+    sub_parser.add_argument('--new', action="store_true", help='start training new model')
     add_common_options(sub_parser)
 
     sub_parser = sub.add_parser("sampling")

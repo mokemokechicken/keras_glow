@@ -67,7 +67,7 @@ class SamplingCallback(Callback):
         if epoch % sample_n_epoch == 0:
             self.sample_image(epoch)
         if logs and 'loss' in logs:
-            logs['loss'] = np.sum(logs['loss'])
+            logs['loss'] = np.mean(logs['loss'])
 
     def sample_image(self, epoch):
         agent = Agent(self.config, self.glow_model)

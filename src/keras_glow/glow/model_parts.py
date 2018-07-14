@@ -253,7 +253,7 @@ class AffineCoupling(Network):  # FlowCoupling
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
-        logger.debug(f'called={config}, custom={custom_objects}')
+        # logger.debug(f'called={config}, custom={custom_objects}')
         return cls(**config)
 
 
@@ -348,7 +348,7 @@ class Split2d(Network):
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
-        logger.debug(f'called={config}, custom={custom_objects}')
+        # logger.debug(f'called={config}, custom={custom_objects}')
         return cls(**config)
 
 

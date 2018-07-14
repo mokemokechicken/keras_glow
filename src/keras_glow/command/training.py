@@ -20,16 +20,14 @@ class TrainingCommand:
 
     def start(self):
         dp = DataProcessor(self.config)
-        # for y in dp.iterator():
-        #     print(y.shape)
 
         model = GlowModel(self.config)
-        model.build()
-
-        # with open("enc.json", "wt") as f:
-        #     f.write(json.dumps(model.encoder.get_config(), indent=2))
-        # with open("dec.json", "wt") as f:
-        #     f.write(json.dumps(model.decoder.get_config(), indent=2))
+        if self.config.runtime.args.new or not self.config.resource.encoder_path.exists():
+            logger.info("create a new model")
+            model.build()
+        else:
+            logger.info("loading a existing model")
+            model.load_all()
 
         trainer = Trainer(self.config)
         trainer.fit(model, dp)

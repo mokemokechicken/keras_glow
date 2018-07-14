@@ -166,7 +166,7 @@ class GlowModel:
             if network is not None:
                 for l in network.layers:
                     if l.name == name:
-                        logger.debug(f'found layer: {name}')
+                        # logger.debug(f'found layer: {name}')
                         return l
 
         layer = find_layer(self.encoder, layer_name)
