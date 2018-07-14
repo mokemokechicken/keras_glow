@@ -218,7 +218,7 @@ class AffineCoupling(Network):  # FlowCoupling
 
         scale, shift = split_channels(self.nn(z1))
         # scale = K.exp(scale)  # seems not stable to train
-        scale = 1 + K.tanh(scale)  # how is this?
+        scale = 1 + K.tanh(scale) * 0.2  # how about this?
         # scale = K.sigmoid(scale + 2)  # ?? from reference implementation
         if not reverse:
             z2 = (z2 + shift) * scale
