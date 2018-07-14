@@ -1,0 +1,17 @@
+data:
+  image_width: 16
+  image_height: 16
+
+model:
+  n_levels: 2
+  n_depth: 2
+  hidden_channel_size: 32
+
+training:
+  batch_size: 4
+  epochs: 10
+  steps_per_epoch: 10
+  sample_every_n_epoch: 5
+  lr: 0.00001
+  lr_patience: 5
+  lr_decay: 0.1

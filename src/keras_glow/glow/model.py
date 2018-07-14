@@ -32,7 +32,8 @@ class GlowModel:
         rc = self.config.resource
         if self.encoder is not None:
             logger.info(f"saving encoder to {rc.encoder_path}")
-            self.encoder.save(rc.encoder_path)
+            # include_optimizer=True makes error when deep network...(h5 problem)
+            self.encoder.save(rc.encoder_path, include_optimizer=False)
         if self.decoder is not None:
             logger.info(f"saving decoder to {rc.decoder_path}")
             self.decoder.save(rc.decoder_path, include_optimizer=False)
@@ -81,6 +82,7 @@ class GlowModel:
         prior = GaussianDiag.prior(K.shape(encoder_loop_out))
         encoder.add_loss(-prior.logp(encoder_loop_out) * self.bit_per_sub_pixel_factor)
 
+        # add constant loss (maybe meaningless for training)
         # `objective += - np.log(hps.n_bins) * np.prod(Z.int_shape(z)[1:])`
         encoder.add_loss(np.log(mc.n_bins) * np.prod(in_shape) * self.bit_per_sub_pixel_factor)
         return encoder

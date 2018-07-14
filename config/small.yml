@@ -8,9 +8,10 @@ model:
   hidden_channel_size: 256
 
 training:
-  batch_size: 1
+  batch_size: 4
   epochs: 10000
   steps_per_epoch: 1000
+  sample_every_n_epoch: 2
   lr: 0.00001
   lr_patience: 5
   lr_decay: 0.1
