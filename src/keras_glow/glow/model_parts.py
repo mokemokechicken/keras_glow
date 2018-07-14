@@ -217,7 +217,9 @@ class AffineCoupling(Network):  # FlowCoupling
         z1, z2 = split_channels(z)
 
         scale, shift = split_channels(self.nn(z1))
-        scale = K.exp(scale)  # K.sigmoid(x + 2)  ??
+        # scale = K.exp(scale)
+        # scale = 1 + K.tanh(scale)
+        scale = K.sigmoid(scale + 2)  # ??
         if not reverse:
             z2 = (z2 + shift) * scale
             self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]) * self.bit_per_sub_pixel_factor)
@@ -253,9 +255,6 @@ class AffineCoupling(Network):  # FlowCoupling
     def from_config(cls, config, custom_objects=None):
         logger.debug(f'called={config}, custom={custom_objects}')
         return cls(**config)
-
-    def get_last_scale(self):
-        return np.max(K.get_value(self.last_scale))
 
 
 class Squeeze2d(Layer):

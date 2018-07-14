@@ -3,8 +3,8 @@ data:
   image_height: 64
 
 model:
-  n_levels: 2  # 4
-  n_depth: 8  # 32
+  n_levels: 4  # 4
+  n_depth: 16  # 32
   hidden_channel_size: 256
 
 training:

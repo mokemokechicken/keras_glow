@@ -185,11 +185,3 @@ class GlowModel:
                     values.append(f'(min={np.min(ls)} mean={np.mean(ls)} max={np.max(ls)})')
             logger.debug(",".join(values))
 
-        def affine_coupling():
-            logger.debug('affine_coupling')
-            values = []
-            for layer in [x for x in self.encoder.layers if isinstance(x, AffineCoupling)]:
-                values.append(f'{layer.get_last_scale():.3f}')
-            logger.debug(",".join(values))
-
-        affine_coupling()
