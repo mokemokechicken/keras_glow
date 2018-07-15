@@ -198,7 +198,7 @@ class AffineCoupling(Network):  # FlowCoupling
         self.last_conv = Conv2D(filters=self.in_shape[-1], kernel_size=3, padding="same", name=f'{self.name}/last_conv',
                                 kernel_initializer='zero', bias_initializer='zero')
 
-        # ------------ monkey-patch -----------------
+        # ------------ workarounds -----------------
         # (1) Avoid error in __call__()
         self.outputs = []
         # (2) Avoid Model.get_config() -> from_config() infinite loop (by pushing dummy node)
@@ -216,7 +216,7 @@ class AffineCoupling(Network):  # FlowCoupling
         z = inputs
         z1, z2 = split_channels(z)
 
-        scale, shift = split_channels(self.nn(z1))
+        scale, shift = split_channels_by_even_and_odd(self.nn(z1))
         # scale = K.exp(scale)  # seems not stable to train
         scale = 1 + K.tanh(scale) * 0.2  # how about this?
         # scale = K.sigmoid(scale + 2)  # ?? from reference implementation
@@ -304,7 +304,7 @@ class Split2d(Network):
         self.conv = Conv2D(filters=self.in_shape[-1], kernel_size=3, padding="same",
                            kernel_initializer='zero', bias_initializer='zero')
 
-        # ------------ monkey-patch -----------------
+        # ------------ workarounds -----------------
         # (1) Avoid error in __call__()
         self.outputs = []
         # (2) Avoid Model.get_config() -> from_config() infinite loop (by pushing dummy node)
@@ -324,7 +324,7 @@ class Split2d(Network):
 
             # split2d_prior(z)
             h = self.conv(z1)  # (w, h, n_ch)
-            pz = GaussianDiag(h)  # (w, h, n_ch//2)
+            pz = GaussianDiag(h, by_even_and_odd=True)  # (w, h, n_ch//2)
             # out = Squeeze2d()(z1)  # (w//2, h//2, n_ch*2)  move to encoder_loop() for corresponding to the paper
             self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)
             out = z1
@@ -332,7 +332,7 @@ class Split2d(Network):
             # z1 = Unsqueeze2d()(inputs)  # (w, h, n_ch//2)  # move to decoder_loop() for corresponding to the paper
             z1, temperature = inputs
             h = self.conv(z1)  # (w, h, n_ch)
-            pz = GaussianDiag(h)  # (w, h, n_ch//2)
+            pz = GaussianDiag(h, by_even_and_odd=True)  # (w, h, n_ch//2)
             z2 = pz.sample2(pz.eps * K.reshape(temperature, [-1, 1, 1, 1]))
             out = K.concatenate([z1, z2], axis=3)
         return out
@@ -373,8 +373,11 @@ class JustForAddLoss(Layer):
 
 
 class GaussianDiag:
-    def __init__(self, tensor):
-        self.mean, self.logsd = split_channels(tensor)
+    def __init__(self, tensor, by_even_and_odd=False):
+        if by_even_and_odd:
+            self.mean, self.logsd = split_channels_by_even_and_odd(tensor)
+        else:
+            self.mean, self.logsd = split_channels(tensor)
         self.eps = K.random_normal(K.shape(self.mean))  # eps means like temperature
         self.sample = self.mean + K.exp(self.logsd) * self.eps
 
@@ -401,3 +404,7 @@ def split_channels(tensor):
         return tensor[:, :n_ch // 2], tensor[:, n_ch // 2:]
     elif K.ndim(tensor) == 4:
         return tensor[:, :, :, :n_ch // 2], tensor[:, :, :, n_ch // 2:]
+
+
+def split_channels_by_even_and_odd(tensor):  # I don't know there is any difference.
+    return tensor[:, :, :, 0::2], tensor[:, :, :, 1::2]
