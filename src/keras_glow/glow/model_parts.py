@@ -117,17 +117,19 @@ class ActNorm(Layer):  # TODO: これが機能してないのかもな
         x = inputs
         reduce_axis = list(range(K.ndim(inputs)))[:-1]
         if not reverse:
-            # x_var = tf.reduce_mean(x ** 2, reduce_axis, keepdims=True)
-            # init_scale = tf.log(1. / (tf.sqrt(x_var) + 1e-6)) / logscale_factor
-            # init_bias = tf.reduce_mean(x, reduce_axis, keepdims=True)
-            # log_scale = K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale, self.log_scale)
-            # bias = K.switch(K.all(K.equal(self.bias, 0.)), -init_bias, self.bias)
-            # self.add_update(K.update_add(self.log_scale, K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale,
-            #                                                       K.zeros_like(init_scale))))
-            # self.add_update(K.update_add(self.bias, K.switch(K.all(K.equal(self.bias, 0.)), -init_bias,
-            #                                                  K.zeros_like(init_bias))))
-            # return (x + bias) * K.exp(log_scale)
-            return (x + self.bias) * K.exp(self.log_scale)
+            # DDI?
+            x_var = tf.reduce_mean(x ** 2, reduce_axis, keepdims=True)
+            init_scale = tf.log(1. / (tf.sqrt(x_var) + 1e-6)) / logscale_factor
+            init_bias = tf.reduce_mean(x, reduce_axis, keepdims=True)
+            log_scale = K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale, self.log_scale)
+            bias = K.switch(K.all(K.equal(self.bias, 0.)), -init_bias, self.bias)
+            self.add_update(K.update_add(self.log_scale, K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale,
+                                                                  K.zeros_like(init_scale))), inputs=x)
+            self.add_update(K.update_add(self.bias, K.switch(K.all(K.equal(self.bias, 0.)), -init_bias,
+                                                             K.zeros_like(init_bias))), inputs=x)
+            #self.add_update([K.update(self.log_scale, log_scale), K.update(self.bias, bias)], inputs=[x, x])
+            return (x + bias) * K.exp(log_scale)
+            # return (x + self.bias) * K.exp(self.log_scale)
         else:
             return x / K.exp(self.log_scale) - self.bias
 
