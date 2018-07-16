@@ -5,7 +5,9 @@ import tensorflow as tf
 from tensorflow.python.keras import backend as K, initializers, Input
 from tensorflow.python.keras.engine import Layer, Network, base_layer
 from tensorflow.python.keras.layers import Conv2D, Activation
+from tensorflow.python.layers.normalization import BatchNormalization
 
+BatchNormalization
 
 logger = getLogger(__name__)
 
@@ -74,7 +76,7 @@ class AddRandomUniform(Layer):
         return config
 
 
-class ActNorm(Layer):
+class ActNorm(Layer):  # TODO: これが機能してないのかもな
     log_scale = None
     bias = None
 
@@ -111,9 +113,20 @@ class ActNorm(Layer):
         super().build(input_shape)
 
     def call(self, inputs, reverse=False, **kwargs):
+        logscale_factor = 3.
         x = inputs
+        reduce_axis = list(range(K.ndim(inputs)))[:-1]
         if not reverse:
-            return (x + self.bias) * K.exp(self.log_scale)
+            x_var = tf.reduce_mean(x ** 2, reduce_axis, keepdims=True)
+            init_scale = tf.log(1. / (tf.sqrt(x_var) + 1e-6)) / logscale_factor
+            init_bias = tf.reduce_mean(x, reduce_axis, keepdims=True)
+            log_scale = K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale, self.log_scale)
+            bias = K.switch(K.all(K.equal(self.bias, 0.)), -init_bias, self.bias)
+            self.add_update(K.update_add(self.log_scale, K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale,
+                                                                  K.zeros_like(init_scale))))
+            self.add_update(K.update_add(self.bias, K.switch(K.all(K.equal(self.bias, 0.)), -init_bias,
+                                                             K.zeros_like(init_bias))))
+            return (x + bias) * K.exp(log_scale)
         else:
             return x / K.exp(self.log_scale) - self.bias
 
@@ -154,6 +167,7 @@ class Invertible1x1Conv(Layer):
         log_det_factor = int(input_shape[1] * input_shape[2])
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)) + K.epsilon())
+        # TODO: is it bad to use clip_by_value?
         log_det = tf.log(tf.clip_by_value(tf.abs(tf.matrix_determinant(self.rotate_matrix)), 0.001, 1000))
         self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)
 
@@ -319,20 +333,21 @@ class Split2d(Network):
             output_tensors=self.outputs)
 
     def call(self, inputs, reverse=False, **kwargs):
+        # input shape: (h, w, n_ch)
         if not reverse:
-            z1, z2 = split_channels(inputs)  # (w, h, n_ch//2)
+            z1, z2 = split_channels(inputs)  # z1, z2 shape: (h, w, n_ch//2)
 
             # split2d_prior(z)
-            h = self.conv(z1)  # (w, h, n_ch)
-            pz = GaussianDiag(h, by_even_and_odd=True)  # (w, h, n_ch//2)
-            # out = Squeeze2d()(z1)  # (w//2, h//2, n_ch*2)  move to encoder_loop() for corresponding to the paper
+            h = self.conv(z1)  # (h, w, n_ch//2)
+            pz = GaussianDiag(h, by_even_and_odd=True)  # (h, w, n_ch//2)
+            # out = Squeeze2d()(z1)  # (h//2, w//2, n_ch*2)  move to encoder_loop() for corresponding to the paper
             self.add_loss(-1 * pz.logp(z2) * self.bit_per_sub_pixel_factor)
             out = z1
         else:
-            # z1 = Unsqueeze2d()(inputs)  # (w, h, n_ch//2)  # move to decoder_loop() for corresponding to the paper
+            # z1 = Unsqueeze2d()(inputs)  # (h, w, n_ch//2)  # move to decoder_loop() for corresponding to the paper
             z1, temperature = inputs
-            h = self.conv(z1)  # (w, h, n_ch)
-            pz = GaussianDiag(h, by_even_and_odd=True)  # (w, h, n_ch//2)
+            h = self.conv(z1)  # (h, w, n_ch)
+            pz = GaussianDiag(h, by_even_and_odd=True)  # (h, w, n_ch//2)
             z2 = pz.sample2(pz.eps * K.reshape(temperature, [-1, 1, 1, 1]))
             out = K.concatenate([z1, z2], axis=3)
         return out
