@@ -17,8 +17,10 @@ class SamplingCommand:
         self.config = config
 
     def start(self):
+        args = self.config.runtime.args
+        assert int(args.n) > 0 and 0 <= args.t <= 1
         model = GlowModel(self.config)
         model.load_all()
 
         agent = Agent(self.config, model)
-        agent.sample_to_save(n=10)
+        agent.sample_to_save(n=int(args.n), temperature=args.t)

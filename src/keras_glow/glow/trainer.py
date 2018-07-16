@@ -37,7 +37,8 @@ class Trainer:
             TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True,
                         # histogram_freq=5, write_grads=True
                         ),
-            ReduceLROnPlateau(monitor='loss', factor=tc.lr_decay, patience=tc.lr_patience, verbose=1),
+            ReduceLROnPlateau(monitor='loss', factor=tc.lr_decay, patience=tc.lr_patience, verbose=1,
+                              min_lr=tc.lr_patience),
         ]
         try:
             model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,

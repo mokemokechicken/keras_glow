@@ -74,6 +74,7 @@ class TrainingConfig(ConfigBase):
     def __init__(self):
         self.batch_size = 1
         self.lr = 0.0001
+        self.lr_min = 0.000001
         self.lr_patience = 5
         self.lr_decay = 0.1
         self.epochs = 10

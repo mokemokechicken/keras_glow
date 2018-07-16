@@ -18,7 +18,8 @@ class Agent:
 
     def sample(self, n=None, temperature=None):
         n = n or 1
-        temperature = temperature or 0.7
+        temperature = 0.7 if temperature is None else temperature
+        logger.info(f"sampling n={n} temperature={temperature}")
         shape = self.model.decoder_input_shape
         z = np.random.normal(loc=0, scale=1, size=(n, ) + shape)
         t = np.ones((n, )) * temperature

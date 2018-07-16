@@ -26,6 +26,8 @@ def create_parser():
     add_common_options(sub_parser)
 
     sub_parser = sub.add_parser("sampling")
+    sub_parser.add_argument('-n', type=int, help='number of sampling(default=10)', default=10)
+    sub_parser.add_argument('-t', type=float, help='temperature of sampling(default=0.7)', default=0.7)
     sub_parser.set_defaults(command='sampling')
     add_common_options(sub_parser)
     return parser
