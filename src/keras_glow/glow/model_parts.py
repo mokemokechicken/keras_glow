@@ -112,22 +112,23 @@ class ActNorm(Layer):  # TODO: これが機能してないのかもな
         # final
         super().build(input_shape)
 
-    def call(self, inputs, reverse=False, **kwargs):
+    def call(self, inputs, reverse=False, ddi=False, **kwargs):
         logscale_factor = 3.
         x = inputs
         reduce_axis = list(range(K.ndim(inputs)))[:-1]
         if not reverse:
-            # DDI?
-            x_var = tf.reduce_mean(x ** 2, reduce_axis, keepdims=True)
-            init_scale = tf.log(1. / (tf.sqrt(x_var) + 1e-6)) / logscale_factor
-            init_bias = tf.reduce_mean(x, reduce_axis, keepdims=True)
-            log_scale = K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale, self.log_scale)
-            bias = K.switch(K.all(K.equal(self.bias, 0.)), -init_bias, self.bias)
-            self.add_update(K.update_add(self.log_scale, K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale,
-                                                                  K.zeros_like(init_scale))), inputs=x)
-            self.add_update(K.update_add(self.bias, K.switch(K.all(K.equal(self.bias, 0.)), -init_bias,
-                                                             K.zeros_like(init_bias))), inputs=x)
-            #self.add_update([K.update(self.log_scale, log_scale), K.update(self.bias, bias)], inputs=[x, x])
+            log_scale = self.log_scale
+            bias = self.bias
+            if ddi:
+                x_var = tf.reduce_mean(x ** 2, reduce_axis, keepdims=True)
+                init_scale = tf.log(1. / (tf.sqrt(x_var) + 1e-6)) / logscale_factor
+                init_bias = tf.reduce_mean(x, reduce_axis, keepdims=True)
+                log_scale = K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale, self.log_scale)
+                bias = K.switch(K.all(K.equal(self.bias, 0.)), -init_bias, self.bias)
+                self.add_update(K.update_add(self.log_scale, K.switch(K.all(K.equal(self.log_scale, 0.)), init_scale,
+                                                                      K.zeros_like(init_scale))), inputs=x)
+                self.add_update(K.update_add(self.bias, K.switch(K.all(K.equal(self.bias, 0.)), -init_bias,
+                                                                 K.zeros_like(init_bias))), inputs=x)
             return (x + bias) * K.exp(log_scale)
             # return (x + self.bias) * K.exp(self.log_scale)
         else:
@@ -229,11 +230,11 @@ class AffineCoupling(Network):  # FlowCoupling
             input_tensors=[self.in_x],
             output_tensors=self.outputs)
 
-    def call(self, inputs, reverse=False, **kwargs):
+    def call(self, inputs, reverse=False, ddi=False, **kwargs):
         z = inputs
         z1, z2 = split_channels(z)
 
-        scale, shift = split_channels_by_even_and_odd(self.nn(z1))
+        scale, shift = split_channels_by_even_and_odd(self.nn(z1, ddi=ddi))
         # scale = K.exp(scale)  # seems not stable to train
         scale = 1 + K.tanh(scale) * 0.2  # how about this?
         # scale = K.sigmoid(scale + 2)  # ?? from reference implementation
@@ -245,14 +246,14 @@ class AffineCoupling(Network):  # FlowCoupling
         out = K.concatenate([z1, z2], axis=3)
         return out
 
-    def nn(self, out):
+    def nn(self, out, ddi=False):
         """n_ch of output is same as n_ch of input_shape"""
         out = self.conv1(out)
-        out = self.actnorm1(out)
+        out = self.actnorm1(out, ddi=ddi)
         out = Activation('relu')(out)
 
         out = self.conv2(out)
-        out = self.actnorm2(out)
+        out = self.actnorm2(out, ddi=ddi)
         out = Activation('relu')(out)
 
         out = self.last_conv(out)
