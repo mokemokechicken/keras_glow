@@ -203,5 +203,5 @@ class GlowModel:
                     values.append(f'(min={np.min(ls)} mean={np.mean(ls)} max={np.max(ls)})')
             logger.debug(",".join(values))
 
-        actnorm()
+        # actnorm()
 
