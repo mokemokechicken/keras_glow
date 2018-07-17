@@ -26,12 +26,6 @@ class Trainer:
         self.compile(model)
         steps_per_epoch = tc.steps_per_epoch or dp.image_count//tc.batch_size
 
-        def generator_for_fit():
-            while True:
-                for img in dp.iterator(batch_size=tc.batch_size):
-                    # logger.debug(f'img.shape={img.shape}, img.mean={np.mean(img)}')
-                    yield (img, np.zeros((img.shape[0], )))
-
         callbacks = [
             SamplingCallback(self.config, model),
             TensorBoard(str(self.config.resource.tensorboard_dir), batch_size=tc.batch_size, write_graph=True,
@@ -41,16 +35,36 @@ class Trainer:
                               min_lr=tc.lr_patience),
         ]
         try:
-            model.encoder.fit_generator(generator_for_fit(), epochs=tc.epochs,
+            model.encoder.fit_generator(self.generator_for_fit(dp), epochs=tc.epochs,
                                         steps_per_epoch=steps_per_epoch,
                                         callbacks=callbacks, verbose=1)
         except InvalidArgumentError as e:
             model.dump_model_internal()
             raise e
 
-    def compile(self, model: GlowModel):
+    def data_dependent_init(self, model: GlowModel, dp: DataProcessor):
+        logger.info('Start Data Dependent Init')
+        model.dump_model_internal()
+        self.compile(model, lr=0.000000001)
+
+        try:
+            model.encoder.fit_generator(self.generator_for_fit(dp), epochs=1,
+                                        steps_per_epoch=1, verbose=1)
+        except InvalidArgumentError as e:
+            model.dump_model_internal()
+            raise e
+        logger.info('Finish Data Dependent Init')
+
+    def generator_for_fit(self, dp):
+        while True:
+            for img in dp.iterator(batch_size=self.config.training.batch_size):
+                # logger.debug(f'img.shape={img.shape}, img.mean={np.mean(img)}')
+                yield (img, np.zeros((img.shape[0],)))
+
+    def compile(self, model: GlowModel, lr=None):
         tc = self.config.training
-        model.encoder.compile(optimizer=Adam(lr=tc.lr), loss=create_prior_loss(model.bit_per_sub_pixel_factor))
+        lr = lr or tc.lr
+        model.encoder.compile(optimizer=Adam(lr=lr), loss=create_prior_loss(model.bit_per_sub_pixel_factor))
 
 
 class SamplingCallback(Callback):

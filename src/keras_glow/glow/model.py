@@ -21,8 +21,10 @@ class GlowModel:
         self.config = config
         self.encoder = None  # type: Model
         self.decoder = None  # type: Model
+        self.ddi = False
 
-    def build(self):
+    def build(self, ddi=False):
+        self.ddi = ddi
         self.encoder = self.build_encoder()
         self.decoder = self.build_decoder()
 
@@ -35,6 +37,16 @@ class GlowModel:
         # if self.decoder is not None:
         #     logger.info(f"saving decoder to {rc.decoder_path}")
         #     self.decoder.save(rc.decoder_path, include_optimizer=False)
+
+    def save_weights(self, filepath=None):
+        filepath = str(filepath or self.config.resource.encoder_temp_weights)
+        logger.info(f'saving encoder weights to {filepath}')
+        self.encoder.save_weights(filepath, save_format='h5')
+
+    def load_weights(self, filepath=None):
+        filepath = str(filepath or self.config.resource.encoder_temp_weights)
+        logger.info(f'loading encoder weights from {filepath}')
+        self.encoder.load_weights(filepath, by_name=True)
 
     def load_all(self):
         rc = self.config.resource
@@ -136,13 +148,13 @@ class GlowModel:
         act_norm = self.get_layer(ActNorm, layer_key, bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
         inv_1x1_conv = self.get_layer(Invertible1x1Conv, layer_key, bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
         if not reverse:
-            out = act_norm(out)
+            out = act_norm(out, ddi=self.ddi)
             out = inv_1x1_conv(out)   # implemented only invertible_1x1_conv version
             affine_coupling = self.get_layer(AffineCoupling, layer_key,
                                              in_shape=K.int_shape(out),
                                              hidden_channel_size=self.config.model.hidden_channel_size,
                                              bit_per_sub_pixel_factor=self.bit_per_sub_pixel_factor)
-            out = affine_coupling(out)  # implemented only affine(flow) coupling version
+            out = affine_coupling(out, ddi=self.ddi)  # implemented only affine(flow) coupling version
         else:
             affine_coupling = self.get_layer(AffineCoupling, layer_key,
                                              in_shape=K.int_shape(out),

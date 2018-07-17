@@ -12,7 +12,7 @@ training:
   epochs: 10000
   steps_per_epoch: 1000
   sample_every_n_epoch: 2
-  lr:     0.00001
+  lr:     0.0001
   lr_min: 0.0000001
   lr_patience: 5
-  lr_decay: 0.1
+  lr_decay: 0.5

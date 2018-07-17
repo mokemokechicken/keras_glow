@@ -39,6 +39,7 @@ class ResourceConfig(ConfigBase):
 
         # Model
         self.encoder_path = self.model_dir / 'encoder.h5'
+        self.encoder_temp_weights = self.model_dir / 'encoder_weight_tmp.h5'
         # self.decoder_path = self.model_dir / 'decoder.h5'
 
         # Sample
