@@ -45,7 +45,7 @@ class Trainer:
     def data_dependent_init(self, model: GlowModel, dp: DataProcessor):
         logger.info('Start Data Dependent Init')
         model.dump_model_internal()
-        self.compile(model)
+        self.compile(model, lr=0.000000001)
 
         try:
             model.encoder.fit_generator(self.generator_for_fit(dp), epochs=1,
@@ -61,9 +61,10 @@ class Trainer:
                 # logger.debug(f'img.shape={img.shape}, img.mean={np.mean(img)}')
                 yield (img, np.zeros((img.shape[0],)))
 
-    def compile(self, model: GlowModel):
+    def compile(self, model: GlowModel, lr=None):
         tc = self.config.training
-        model.encoder.compile(optimizer=Adam(lr=tc.lr), loss=create_prior_loss(model.bit_per_sub_pixel_factor))
+        lr = lr or tc.lr
+        model.encoder.compile(optimizer=Adam(lr=lr), loss=create_prior_loss(model.bit_per_sub_pixel_factor))
 
 
 class SamplingCallback(Callback):
