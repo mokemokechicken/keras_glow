@@ -29,7 +29,11 @@ class TrainingCommand:
             logger.info("create a new model")
             model.build(ddi=True)
             trainer.data_dependent_init(model, dp)
+            model.save_weights()
+            K.clear_session()
+            model = GlowModel(self.config)
             model.build(ddi=False)
+            model.load_weights()
         else:
             logger.info("loading a existing model")
             model.load_all()

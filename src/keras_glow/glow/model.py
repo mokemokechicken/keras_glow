@@ -38,6 +38,16 @@ class GlowModel:
         #     logger.info(f"saving decoder to {rc.decoder_path}")
         #     self.decoder.save(rc.decoder_path, include_optimizer=False)
 
+    def save_weights(self, filepath=None):
+        filepath = str(filepath or self.config.resource.encoder_temp_weights)
+        logger.info(f'saving encoder weights to {filepath}')
+        self.encoder.save_weights(filepath, save_format='h5')
+
+    def load_weights(self, filepath=None):
+        filepath = str(filepath or self.config.resource.encoder_temp_weights)
+        logger.info(f'loading encoder weights from {filepath}')
+        self.encoder.load_weights(filepath, by_name=True)
+
     def load_all(self):
         rc = self.config.resource
         custom_objects = dict(
