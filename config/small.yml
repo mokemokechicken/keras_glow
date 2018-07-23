@@ -5,7 +5,7 @@ data:
 model:
   n_levels: 3  # 4
   n_depth: 24  # 32
-  hidden_channel_size: 256
+  hidden_channel_size: 256  # 512
 
 training:
   batch_size: 4

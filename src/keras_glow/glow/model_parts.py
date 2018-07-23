@@ -5,9 +5,7 @@ import tensorflow as tf
 from tensorflow.python.keras import backend as K, initializers, Input
 from tensorflow.python.keras.engine import Layer, Network, base_layer
 from tensorflow.python.keras.layers import Conv2D, Activation
-from tensorflow.python.layers.normalization import BatchNormalization
 
-BatchNormalization
 
 logger = getLogger(__name__)
 
@@ -130,7 +128,6 @@ class ActNorm(Layer):  # TODO: これが機能してないのかもな
                 self.add_update(K.update_add(self.bias, K.switch(K.all(K.equal(self.bias, 0.)), -init_bias,
                                                                  K.zeros_like(init_bias))), inputs=x)
             return (x + bias) * K.exp(log_scale)
-            # return (x + self.bias) * K.exp(self.log_scale)
         else:
             return x / K.exp(self.log_scale) - self.bias
 
@@ -172,10 +169,11 @@ class Invertible1x1Conv(Layer):
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
         # log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)) + K.epsilon())
         # TODO: is it bad to use clip_by_value?
-        log_det = tf.log(tf.clip_by_value(tf.abs(tf.matrix_determinant(self.rotate_matrix)), 0.001, 1000))
+        # log_det = tf.log(tf.clip_by_value(tf.abs(tf.matrix_determinant(self.rotate_matrix)), 0.001, 1000))
+        log_det = tf.log(tf.abs(tf.matrix_determinant(self.rotate_matrix)))
         self.add_loss(-1 * log_det_factor * log_det * self.bit_per_sub_pixel_factor)
 
-        self.add_update([K.update(self.determinant, tf.matrix_determinant(self.rotate_matrix))])
+        # self.add_update([K.update(self.determinant, tf.matrix_determinant(self.rotate_matrix))])
         # final
         super().build(input_shape)
 
@@ -215,6 +213,7 @@ class AffineCoupling(Network):  # FlowCoupling
 
         self.last_conv = Conv2D(filters=self.in_shape[-1], kernel_size=3, padding="same", name=f'{self.name}/last_conv',
                                 kernel_initializer='zero', bias_initializer='zero')
+        self.actnorm3 = ActNorm(use_loss=False, name=f'{self.name}/actnorm3')
 
         # ------------ workarounds -----------------
         # (1) Avoid error in __call__()
@@ -236,8 +235,8 @@ class AffineCoupling(Network):  # FlowCoupling
 
         scale, shift = split_channels_by_even_and_odd(self.nn(z1, ddi=ddi))
         # scale = K.exp(scale)  # seems not stable to train
-        scale = 1 + K.tanh(scale) * 0.2  # how about this?
-        # scale = K.sigmoid(scale + 2)  # ?? from reference implementation
+        # scale = 1 + K.tanh(scale) * 0.2  # how about this?
+        scale = K.sigmoid(scale + 2)  # ?? from reference implementation
         if not reverse:
             z2 = (z2 + shift) * scale
             self.add_loss(-K.sum(K.log(scale), axis=[1, 2, 3]) * self.bit_per_sub_pixel_factor)
@@ -257,6 +256,7 @@ class AffineCoupling(Network):  # FlowCoupling
         out = Activation('relu')(out)
 
         out = self.last_conv(out)
+        out = self.actnorm3(out)
         return out
 
     def get_config(self):
